@@ -10,7 +10,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from mas.llm import get_json_llm
+from mas.llm import get_light_json_llm
 from mas.state import AgentState
 from mas.tools.file_ops import read_json_file
 from mas.tools.logger import log_agent_action
@@ -145,7 +145,7 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
             # At least one field is missing; invoke the LLM for comprehensive
             # extraction and cover-page boilerplate removal.
             try:
-                llm = get_json_llm(schema=StudentDetails)
+                llm = get_light_json_llm(schema=StudentDetails)
                 messages = [
                     SystemMessage(
                         content=(

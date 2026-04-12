@@ -134,14 +134,23 @@ class TestFinalizeAgent:
         assert result["past_reports"][0]["grade"] == "D"
 
     @patch("mas.agents.finalize.get_prose_llm")
-    def test_insights_generated_for_returning_student(self, mock_get_llm, tmp_path):
+    @patch("mas.agents.finalize.get_light_prose_llm")
+    def test_insights_generated_for_returning_student(
+        self, mock_get_light_llm, mock_get_prose_llm, tmp_path
+    ):
         db = str(tmp_path / "students.db")
         save_report(db, "IT21000001", "old-session", "2025-01-01T00:00:00+00:00",
                     SCORED_CRITERIA, 5, "D")
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(content="Student is improving.")
-        mock_get_llm.return_value = mock_llm
+        # Light LLM handles insights
+        mock_light_llm = MagicMock()
+        mock_light_llm.invoke.return_value = MagicMock(content="Student is improving.")
+        mock_get_light_llm.return_value = mock_light_llm
+
+        # Analysis LLM handles report prose
+        mock_prose_llm = MagicMock()
+        mock_prose_llm.invoke.return_value = MagicMock(content="# Report\n\nGood work.")
+        mock_get_prose_llm.return_value = mock_prose_llm
 
         state = _make_state(db, output_path=str(tmp_path / "report.md"))
         result = finalize_agent(state)
@@ -151,14 +160,23 @@ class TestFinalizeAgent:
         assert "## Progression Insights" in result["final_report"]
 
     @patch("mas.agents.finalize.get_prose_llm")
-    def test_insights_llm_failure_gives_empty_insights(self, mock_get_llm, tmp_path):
+    @patch("mas.agents.finalize.get_light_prose_llm")
+    def test_insights_llm_failure_gives_empty_insights(
+        self, mock_get_light_llm, mock_get_prose_llm, tmp_path
+    ):
         db = str(tmp_path / "students.db")
         save_report(db, "IT21000001", "old-session", "2025-01-01T00:00:00+00:00",
                     SCORED_CRITERIA, 5, "D")
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = RuntimeError("LLM unavailable")
-        mock_get_llm.return_value = mock_llm
+        # Light LLM fails
+        mock_light_llm = MagicMock()
+        mock_light_llm.invoke.side_effect = RuntimeError("LLM unavailable")
+        mock_get_light_llm.return_value = mock_light_llm
+
+        # Analysis LLM works fine (report prose still generated)
+        mock_prose_llm = MagicMock()
+        mock_prose_llm.invoke.return_value = MagicMock(content="# Report\n\nGood work.")
+        mock_get_prose_llm.return_value = mock_prose_llm
 
         state = _make_state(db, output_path=str(tmp_path / "report.md"))
         result = finalize_agent(state)
@@ -208,7 +226,7 @@ class TestTaskGenerateInsights:
         result = _task_generate_insights("S001", [], 7.0, "C")
         assert result == ""
 
-    @patch("mas.agents.finalize.get_prose_llm")
+    @patch("mas.agents.finalize.get_light_prose_llm")
     def test_calls_llm_with_past_reports(self, mock_get_llm):
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = MagicMock(content="Good trend.")
@@ -220,7 +238,7 @@ class TestTaskGenerateInsights:
         assert result == "Good trend."
         mock_llm.invoke.assert_called_once()
 
-    @patch("mas.agents.finalize.get_prose_llm")
+    @patch("mas.agents.finalize.get_light_prose_llm")
     def test_returns_empty_on_llm_failure(self, mock_get_llm):
         mock_llm = MagicMock()
         mock_llm.invoke.side_effect = RuntimeError("fail")

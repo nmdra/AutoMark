@@ -3,11 +3,31 @@
 Settings are resolved once at import time.  Each value can be overridden by
 setting the corresponding environment variable before starting the process.
 
+Model selection
+---------------
+AutoMark uses two separate Ollama models to balance quality and speed:
+
+* **Analysis model** – used for computationally demanding tasks that require
+  deep reading comprehension and long-form generation (rubric scoring,
+  feedback-report prose).  Defaults to ``phi4-mini:3.8b-q4_K_M``.
+
+* **Light model** – used for lightweight queries where a smaller model is
+  sufficient: extracting student details from PDF text and generating short
+  progression-insight paragraphs.  Defaults to ``gemma3:1b-it-q4_K_M``.
+
 Environment variables
 ---------------------
-AUTOMARK_MODEL_NAME
-    Ollama model identifier used for all LLM calls.
+AUTOMARK_ANALYSIS_MODEL_NAME
+    Ollama model identifier for complex, analysis-focused tasks (rubric
+    scoring, feedback-report generation).
     Default: ``phi4-mini:3.8b-q4_K_M``
+    Legacy alias: ``AUTOMARK_MODEL_NAME`` (used when
+    ``AUTOMARK_ANALYSIS_MODEL_NAME`` is unset).
+
+AUTOMARK_LIGHT_MODEL_NAME
+    Ollama model identifier for lightweight queries (PDF extraction,
+    progression-insight summaries).
+    Default: ``gemma3:1b-it-q4_K_M``
 
 AUTOMARK_OLLAMA_BASE_URL
     Base URL for the Ollama HTTP API.
@@ -61,10 +81,10 @@ AUTOMARK_MIN_REPORTS_FOR_INSIGHTS
 
 Ollama parallel-request note
 -----------------------------
-The finalize agent runs the historical-insights LLM call and the feedback-
-report prose LLM call concurrently using a ``ThreadPoolExecutor``.  To
-fully benefit from this, configure Ollama with ``OLLAMA_NUM_PARALLEL >= 2``
-on the Ollama server side.
+The finalize agent runs the historical-insights LLM call (light model) and
+the feedback-report prose LLM call (analysis model) concurrently using a
+``ThreadPoolExecutor``.  To fully benefit from this, configure Ollama with
+``OLLAMA_NUM_PARALLEL >= 2`` on the Ollama server side.
 """
 
 from __future__ import annotations
@@ -92,7 +112,10 @@ class Settings:
     """Immutable application settings resolved from environment variables."""
 
     # ── LLM / Ollama ──────────────────────────────────────────────────────────
-    model_name: str
+    # Heavy model for analysis-focused tasks (rubric scoring, feedback reports)
+    analysis_model_name: str
+    # Lightweight model for simple extraction and short prose tasks
+    light_model_name: str
     ollama_base_url: str
 
     # ── Storage ───────────────────────────────────────────────────────────────
@@ -114,8 +137,16 @@ class Settings:
 
 def _load_settings() -> Settings:
     root = _PROJECT_ROOT
+    # Support legacy AUTOMARK_MODEL_NAME as a fallback for analysis_model_name
+    # so that existing deployments keep working without reconfiguration.
+    _default_analysis_model = _env("AUTOMARK_MODEL_NAME", "phi4-mini:3.8b-q4_K_M")
     return Settings(
-        model_name=_env("AUTOMARK_MODEL_NAME", "phi4-mini:3.8b-q4_K_M"),
+        analysis_model_name=_env(
+            "AUTOMARK_ANALYSIS_MODEL_NAME", _default_analysis_model
+        ),
+        light_model_name=_env(
+            "AUTOMARK_LIGHT_MODEL_NAME", "gemma3:1b-it-q4_K_M"
+        ),
         ollama_base_url=_env("AUTOMARK_OLLAMA_BASE_URL", "http://localhost:11434"),
         db_path=_env("AUTOMARK_DB_PATH", str(root / "data" / "students.db")),
         log_file=_env("AUTOMARK_LOG_FILE", "agent_trace.log"),

@@ -146,7 +146,7 @@ class TestHistoricalAgent:
         assert len(result["past_reports"]) == 1
         assert result["past_reports"][0]["grade"] == "D"
 
-    @patch("mas.agents.historical.get_prose_llm")
+    @patch("mas.agents.historical.get_light_prose_llm")
     def test_progression_insights_generated_for_returning_student(
         self, mock_get_llm, tmp_path
     ):
@@ -162,7 +162,7 @@ class TestHistoricalAgent:
 
         assert result["progression_insights"] == "Student is improving steadily."
 
-    @patch("mas.agents.historical.get_prose_llm")
+    @patch("mas.agents.historical.get_light_prose_llm")
     def test_llm_failure_gives_empty_insights(self, mock_get_llm, tmp_path):
         db_path = str(tmp_path / "students.db")
         save_report(db_path, "IT21000001", "old-session", "2025-01-01T00:00:00+00:00",

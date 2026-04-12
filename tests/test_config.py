@@ -21,9 +21,13 @@ def _reload_settings(env: dict[str, str]):
 
 
 class TestSettingsDefaults:
-    def test_default_model_name(self):
+    def test_default_analysis_model_name(self):
         s = _reload_settings({})
-        assert s.model_name == "phi4-mini:3.8b-q4_K_M"
+        assert s.analysis_model_name == "phi4-mini:3.8b-q4_K_M"
+
+    def test_default_light_model_name(self):
+        s = _reload_settings({})
+        assert s.light_model_name == "gemma3:1b-it-q4_K_M"
 
     def test_default_ollama_base_url(self):
         s = _reload_settings({})
@@ -83,9 +87,28 @@ class TestSettingsDefaults:
 
 
 class TestSettingsEnvOverrides:
-    def test_model_name_override(self):
+    def test_analysis_model_name_override(self):
+        s = _reload_settings({"AUTOMARK_ANALYSIS_MODEL_NAME": "phi4-mini:14b"})
+        assert s.analysis_model_name == "phi4-mini:14b"
+
+    def test_light_model_name_override(self):
+        s = _reload_settings({"AUTOMARK_LIGHT_MODEL_NAME": "gemma3:4b-it-q4_K_M"})
+        assert s.light_model_name == "gemma3:4b-it-q4_K_M"
+
+    def test_legacy_model_name_env_sets_analysis_model(self):
+        """AUTOMARK_MODEL_NAME (legacy) should set analysis_model_name when
+        AUTOMARK_ANALYSIS_MODEL_NAME is not provided."""
         s = _reload_settings({"AUTOMARK_MODEL_NAME": "llama3:8b"})
-        assert s.model_name == "llama3:8b"
+        assert s.analysis_model_name == "llama3:8b"
+
+    def test_analysis_model_name_takes_precedence_over_legacy(self):
+        s = _reload_settings(
+            {
+                "AUTOMARK_MODEL_NAME": "llama3:8b",
+                "AUTOMARK_ANALYSIS_MODEL_NAME": "phi4-mini:14b",
+            }
+        )
+        assert s.analysis_model_name == "phi4-mini:14b"
 
     def test_ollama_base_url_override(self):
         s = _reload_settings({"AUTOMARK_OLLAMA_BASE_URL": "http://ollama:11434"})
@@ -136,17 +159,17 @@ class TestSettingsEnvOverrides:
         assert s.min_reports_for_insights == 2
 
     def test_empty_env_var_falls_back_to_default(self):
-        s = _reload_settings({"AUTOMARK_MODEL_NAME": ""})
-        assert s.model_name == "phi4-mini:3.8b-q4_K_M"
+        s = _reload_settings({"AUTOMARK_ANALYSIS_MODEL_NAME": ""})
+        assert s.analysis_model_name == "phi4-mini:3.8b-q4_K_M"
 
     def test_multiple_overrides_applied_together(self):
         s = _reload_settings(
             {
-                "AUTOMARK_MODEL_NAME": "mistral:7b",
+                "AUTOMARK_ANALYSIS_MODEL_NAME": "mistral:7b",
                 "AUTOMARK_DB_PATH": "/data/prod.db",
             }
         )
-        assert s.model_name == "mistral:7b"
+        assert s.analysis_model_name == "mistral:7b"
         assert s.db_path == "/data/prod.db"
 
 
@@ -159,7 +182,7 @@ class TestSettingsImmutability:
 
         s = _reload_settings({})
         with pytest.raises((AttributeError, TypeError)):
-            s.model_name = "changed"  # type: ignore[misc]
+            s.analysis_model_name = "changed"  # type: ignore[misc]
 
 
 # ── module-level singleton ────────────────────────────────────────────────────
@@ -175,7 +198,8 @@ class TestModuleSingleton:
         from mas.config import settings
 
         for field in (
-            "model_name",
+            "analysis_model_name",
+            "light_model_name",
             "ollama_base_url",
             "db_path",
             "log_file",

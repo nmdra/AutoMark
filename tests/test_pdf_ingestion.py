@@ -103,7 +103,7 @@ class TestRegexExtractors:
 
 
 class TestPdfIngestionAgent:
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_success_sets_ingestion_status(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -120,7 +120,7 @@ class TestPdfIngestionAgent:
 
         assert result["ingestion_status"] == "success"
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_extracts_student_id_and_name(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -138,7 +138,7 @@ class TestPdfIngestionAgent:
         assert result["student_id"] == "IT21000042"
         assert result["student_name"] == "Bob Smith"
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_submission_text_populated(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -155,7 +155,7 @@ class TestPdfIngestionAgent:
 
         assert result["submission_text"] == "Cleaned submission body."
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_rubric_data_loaded(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -205,7 +205,7 @@ class TestPdfIngestionAgent:
         rub = _write_rubric(tmp_path)
 
         with patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown") as mc, \
-             patch("mas.agents.pdf_ingestion.get_json_llm") as ml:
+             patch("mas.agents.pdf_ingestion.get_light_json_llm") as ml:
             mc.return_value = "Text."
             det = MagicMock()
             det.student_id = ""
@@ -222,7 +222,7 @@ class TestPdfIngestionAgent:
         rub = _write_rubric(tmp_path)
 
         with patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown") as mc, \
-             patch("mas.agents.pdf_ingestion.get_json_llm") as ml:
+             patch("mas.agents.pdf_ingestion.get_light_json_llm") as ml:
             mc.return_value = "Text."
             det = MagicMock()
             det.student_id = ""
@@ -235,7 +235,7 @@ class TestPdfIngestionAgent:
 
         assert result["session_id"] == "my-session"
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_log_entry_appended(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -254,7 +254,7 @@ class TestPdfIngestionAgent:
         assert log["agent"] == "pdf_ingestion"
         assert log["action"] == "ingest_pdf_submission"
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_existing_logs_preserved(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -274,7 +274,7 @@ class TestPdfIngestionAgent:
         assert len(result["agent_logs"]) == 2
         assert result["agent_logs"][0] == prior
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_returns_expected_fields_on_success(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -294,7 +294,7 @@ class TestPdfIngestionAgent:
         }
         assert set(result.keys()) == expected
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_llm_failure_falls_back_to_raw_markdown(self, mock_convert, mock_llm, tmp_path):
         """When LLM extraction fails, raw markdown is used as submission text."""
@@ -309,7 +309,7 @@ class TestPdfIngestionAgent:
         assert result["ingestion_status"] == "success"
         assert "error" in result
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_regex_fast_path_skips_llm_when_both_fields_found(
         self, mock_convert, mock_llm, tmp_path
@@ -328,7 +328,7 @@ class TestPdfIngestionAgent:
         assert result["student_name"] == "Jane Doe"
         assert result["ingestion_status"] == "success"
 
-    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_llm_called_when_name_missing_from_markdown(
         self, mock_convert, mock_llm, tmp_path
