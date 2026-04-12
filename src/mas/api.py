@@ -234,16 +234,34 @@ def grade(request: GradeRequest) -> GradeResponse:
     final_output = str(_OUTPUT_DIR / f"{file_stem}_feedback_report.md")
     final_marking = str(_OUTPUT_DIR / f"{file_stem}_marking_sheet.md")
 
+    def _replace_path_references(value: Any, old_path: str, new_path: str) -> Any:
+        if not old_path or old_path == new_path:
+            return value
+        if isinstance(value, dict):
+            return {
+                key: _replace_path_references(item, old_path, new_path)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [_replace_path_references(item, old_path, new_path) for item in value]
+        if isinstance(value, str) and value == old_path:
+            return new_path
+        return value
+
     current_output = final_state.get("output_filepath") or ""
     current_marking = final_state.get("marking_sheet_path") or ""
 
     if current_output and Path(current_output).exists():
         Path(current_output).rename(final_output)
+        final_state = _replace_path_references(final_state, current_output, final_output)
+        final_state["output_filepath"] = final_output
     else:
         final_output = current_output
 
     if current_marking and Path(current_marking).exists():
         Path(current_marking).rename(final_marking)
+        final_state = _replace_path_references(final_state, current_marking, final_marking)
+        final_state["marking_sheet_path"] = final_marking
     else:
         final_marking = current_marking
 
