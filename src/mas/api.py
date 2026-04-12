@@ -138,8 +138,7 @@ def _resolve_safe_path(raw: str) -> Path:
             detail="Path traversal sequences ('..') are not allowed.",
         )
     # Join with the trusted base directory — raw never reaches the FS alone.
-    safe_raw = re.sub(r"[^A-Za-z0-9._/\- ]", "", raw)
-    resolved = (_DATA_BASE_DIR / safe_raw).resolve()
+    resolved = (_DATA_BASE_DIR / raw).resolve()
     try:
         resolved.relative_to(_DATA_BASE_DIR)
     except ValueError:
