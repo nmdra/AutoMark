@@ -178,9 +178,13 @@ class TestPdfIngestionAgent:
 
     @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
-    def test_llm_prompt_uses_compact_metadata_context(self, mock_convert, mock_llm, tmp_path):
+    @patch("mas.agents.pdf_ingestion.settings")
+    def test_llm_prompt_uses_compact_metadata_context(
+        self, mock_settings, mock_convert, mock_llm, tmp_path
+    ):
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
+        mock_settings.pdf_regex_fast_path_enabled = False
         mock_convert.return_value = (
             "Student ID: IT21000042\n"
             + ("X" * 3000)
