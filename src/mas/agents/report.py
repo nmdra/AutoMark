@@ -157,7 +157,7 @@ def report_agent(state: AgentState) -> dict:
     log_entry = log_agent_action(
         session_id=session_id,
         agent="report",
-        action="write_feedback_report_and_marking_sheet",
+        action="write_feedback_report",
         inputs=inputs,
         outputs=outputs,
     )
