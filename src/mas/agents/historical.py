@@ -12,7 +12,7 @@ from mas.llm import get_light_prose_llm
 from mas.state import AgentState
 from mas.tools.db_manager import get_past_reports, save_report
 from mas.tools.file_writer import write_analysis_report
-from mas.tools.logger import log_agent_action
+from mas.tools.logger import log_agent_action, timed_model_call
 
 
 def _build_insights_prompt(
@@ -101,7 +101,14 @@ def historical_agent(state: AgentState) -> dict:
                 ),
                 HumanMessage(content=prompt),
             ]
-            response = llm.invoke(messages)
+            response = timed_model_call(
+                llm=llm,
+                messages=messages,
+                session_id=session_id,
+                service="historical",
+                task_type="progression_insights",
+                model=settings.light_model_name,
+            )
             progression_insights = response.content
         except Exception:  # noqa: BLE001
             progression_insights = ""

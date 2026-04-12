@@ -11,7 +11,7 @@ from mas.config import settings
 from mas.llm import get_prose_llm
 from mas.state import AgentState
 from mas.tools.file_writer import write_feedback_report, write_marking_sheet
-from mas.tools.logger import log_agent_action
+from mas.tools.logger import log_agent_action, timed_model_call
 
 _DEFAULT_OUTPUT = "output/feedback_report.md"
 
@@ -125,7 +125,14 @@ def report_agent(state: AgentState) -> dict:
                 ),
                 HumanMessage(content=prompt),
             ]
-            response = llm.invoke(messages)
+            response = timed_model_call(
+                llm=llm,
+                messages=messages,
+                session_id=session_id,
+                service="report",
+                task_type="feedback_report_generation",
+                model=settings.analysis_model_name,
+            )
             report_text: str = response.content
         else:
             report_text = _build_fallback_report(state)
