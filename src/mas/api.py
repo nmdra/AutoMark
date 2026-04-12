@@ -226,13 +226,24 @@ def grade(request: GradeRequest) -> GradeResponse:
     student_name = final_state.get("student_name") or ""
 
     # Rename output files to include timestamp, student name, and student ID.
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    # Microseconds in the timestamp make collisions (same student, same second) essentially
+    # impossible. A counter suffix handles the theoretical residual case.
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
     safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", student_name) if student_name else "unknown"
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", student_id) if student_id else "unknown"
     file_stem = f"{timestamp}_{safe_name}_{safe_id}"
 
-    final_output = str(_OUTPUT_DIR / f"{file_stem}_feedback_report.md")
-    final_marking = str(_OUTPUT_DIR / f"{file_stem}_marking_sheet.md")
+    def _unique_path(directory: Path, stem: str, suffix: str) -> Path:
+        """Return *directory / stem + suffix*, appending a counter if the path exists."""
+        candidate = directory / f"{stem}{suffix}"
+        counter = 1
+        while candidate.exists():
+            candidate = directory / f"{stem}_{counter}{suffix}"
+            counter += 1
+        return candidate
+
+    final_output = str(_unique_path(_OUTPUT_DIR, f"{file_stem}_feedback_report", ".md"))
+    final_marking = str(_unique_path(_OUTPUT_DIR, f"{file_stem}_marking_sheet", ".md"))
 
     def _replace_path_references(value: Any, old_path: str, new_path: str) -> Any:
         if not old_path or old_path == new_path:
