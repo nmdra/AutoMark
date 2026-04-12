@@ -10,20 +10,22 @@ class AgentState(TypedDict, total=False):
     submission_path: str
     rubric_path: str
     session_id: str
+    db_path: str
 
-    # ── Coordinator ────────────────────────────────────────────────────────
-    validation_status: str   # "success" | "failed"
-    validation_error: str
-
-    # ── Research ───────────────────────────────────────────────────────────
+    # ── Ingestion ──────────────────────────────────────────────────────────
+    student_id: str
+    ingestion_status: str    # "success" | "failed"
     submission_text: str
     rubric_data: dict[str, Any]
-    research_status: str     # "success" | "failed"
 
     # ── Analysis ───────────────────────────────────────────────────────────
     scored_criteria: list[dict[str, Any]]
     total_score: float
     grade: str
+
+    # ── Historical ─────────────────────────────────────────────────────────
+    past_reports: list[dict[str, Any]]   # previous scored reports from DB
+    progression_insights: str            # LLM-generated trend text
 
     # ── Report ─────────────────────────────────────────────────────────────
     final_report: str
