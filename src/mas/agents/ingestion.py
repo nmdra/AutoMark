@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 import uuid
 
-from ctse_mas.state import AgentState
-from ctse_mas.tools.file_ops import read_json_file, read_text_file, validate_submission_files
-from ctse_mas.tools.logger import log_agent_action
+from mas.state import AgentState
+from mas.tools.file_ops import read_json_file, read_text_file, validate_submission_files
+from mas.tools.logger import log_agent_action
 
 # Matches "Student ID: <value>" or "Student ID : <value>" (case-insensitive)
 _STUDENT_ID_RE = re.compile(r"student\s+id\s*:\s*(\S+)", re.IGNORECASE)

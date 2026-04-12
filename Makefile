@@ -18,7 +18,7 @@ pull-model:
 
 # Run the auto-grader pipeline
 run:
-	uv run python -m ctse_mas.graph
+	uv run python -m mas.graph
 
 # Run the test suite
 test:
@@ -30,7 +30,7 @@ logs:
 
 # Initialise the SQLite student database
 init-db:
-	uv run python -c "from ctse_mas.tools.db_manager import init_db; init_db('data/students.db'); print('Database initialised at data/students.db')"
+	uv run python -c "from mas.tools.db_manager import init_db; init_db('data/students.db'); print('Database initialised at data/students.db')"
 
 # Remove containers, volumes and cached outputs
 clean:

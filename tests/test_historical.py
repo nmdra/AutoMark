@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctse_mas.agents.historical import historical_agent
-from ctse_mas.state import AgentState
-from ctse_mas.tools.db_manager import get_past_reports, init_db, save_report
+from mas.agents.historical import historical_agent
+from mas.state import AgentState
+from mas.tools.db_manager import get_past_reports, init_db, save_report
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ class TestHistoricalAgent:
         assert len(result["past_reports"]) == 1
         assert result["past_reports"][0]["grade"] == "D"
 
-    @patch("ctse_mas.agents.historical.get_prose_llm")
+    @patch("mas.agents.historical.get_prose_llm")
     def test_progression_insights_generated_for_returning_student(
         self, mock_get_llm, tmp_path
     ):
@@ -162,7 +162,7 @@ class TestHistoricalAgent:
 
         assert result["progression_insights"] == "Student is improving steadily."
 
-    @patch("ctse_mas.agents.historical.get_prose_llm")
+    @patch("mas.agents.historical.get_prose_llm")
     def test_llm_failure_gives_empty_insights(self, mock_get_llm, tmp_path):
         db_path = str(tmp_path / "students.db")
         save_report(db_path, "IT21000001", "old-session", "2025-01-01T00:00:00+00:00",

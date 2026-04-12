@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from ctse_mas.agents.ingestion import _extract_student_id, ingestion_agent
-from ctse_mas.state import AgentState
+from mas.agents.ingestion import _extract_student_id, ingestion_agent
+from mas.state import AgentState
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

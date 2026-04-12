@@ -8,10 +8,10 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ctse_mas.llm import get_prose_llm
-from ctse_mas.state import AgentState
-from ctse_mas.tools.db_manager import get_past_reports, save_report
-from ctse_mas.tools.logger import log_agent_action
+from mas.llm import get_prose_llm
+from mas.state import AgentState
+from mas.tools.db_manager import get_past_reports, save_report
+from mas.tools.logger import log_agent_action
 
 _DEFAULT_DB_PATH = str(
     Path(__file__).parent.parent.parent.parent / "data" / "students.db"

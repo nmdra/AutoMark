@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 import pytest
 
-from ctse_mas.tools.file_ops import read_json_file, read_text_file, validate_submission_files
-from ctse_mas.tools.file_writer import write_feedback_report
-from ctse_mas.tools.logger import log_agent_action
-from ctse_mas.tools.score_calculator import calculate_total_score
+from mas.tools.file_ops import read_json_file, read_text_file, validate_submission_files
+from mas.tools.file_writer import write_feedback_report
+from mas.tools.logger import log_agent_action
+from mas.tools.score_calculator import calculate_total_score
 
 
 # ── file_reader ───────────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ class TestCalculateTotalScore:
 class TestLogAgentAction:
     def test_returns_entry_dict(self, tmp_path):
         log_file = tmp_path / "trace.log"
-        with patch("ctse_mas.tools.logger._LOG_FILE", log_file):
+        with patch("mas.tools.logger._LOG_FILE", log_file):
             entry = log_agent_action(
                 session_id="s1",
                 agent="coordinator",
@@ -278,7 +278,7 @@ class TestLogAgentAction:
 
     def test_entry_contains_required_fields(self, tmp_path):
         log_file = tmp_path / "trace.log"
-        with patch("ctse_mas.tools.logger._LOG_FILE", log_file):
+        with patch("mas.tools.logger._LOG_FILE", log_file):
             entry = log_agent_action(
                 session_id="s1",
                 agent="research",
@@ -291,7 +291,7 @@ class TestLogAgentAction:
 
     def test_entry_values_match_args(self, tmp_path):
         log_file = tmp_path / "trace.log"
-        with patch("ctse_mas.tools.logger._LOG_FILE", log_file):
+        with patch("mas.tools.logger._LOG_FILE", log_file):
             entry = log_agent_action(
                 session_id="abc-123",
                 agent="analysis",
@@ -307,7 +307,7 @@ class TestLogAgentAction:
 
     def test_writes_to_log_file(self, tmp_path):
         log_file = tmp_path / "trace.log"
-        with patch("ctse_mas.tools.logger._LOG_FILE", log_file):
+        with patch("mas.tools.logger._LOG_FILE", log_file):
             log_agent_action(
                 session_id="s1",
                 agent="report",
@@ -320,7 +320,7 @@ class TestLogAgentAction:
 
     def test_appends_multiple_entries(self, tmp_path):
         log_file = tmp_path / "trace.log"
-        with patch("ctse_mas.tools.logger._LOG_FILE", log_file):
+        with patch("mas.tools.logger._LOG_FILE", log_file):
             for i in range(3):
                 log_agent_action(
                     session_id=f"s{i}",
@@ -334,7 +334,7 @@ class TestLogAgentAction:
 
     def test_each_line_is_valid_json(self, tmp_path):
         log_file = tmp_path / "trace.log"
-        with patch("ctse_mas.tools.logger._LOG_FILE", log_file):
+        with patch("mas.tools.logger._LOG_FILE", log_file):
             for i in range(2):
                 log_agent_action(
                     session_id=f"s{i}",
@@ -351,7 +351,7 @@ class TestLogAgentAction:
         from datetime import datetime
 
         log_file = tmp_path / "trace.log"
-        with patch("ctse_mas.tools.logger._LOG_FILE", log_file):
+        with patch("mas.tools.logger._LOG_FILE", log_file):
             entry = log_agent_action(
                 session_id="s1",
                 agent="coordinator",

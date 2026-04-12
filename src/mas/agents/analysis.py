@@ -8,10 +8,10 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from ctse_mas.llm import get_json_llm
-from ctse_mas.state import AgentState
-from ctse_mas.tools.logger import log_agent_action
-from ctse_mas.tools.score_calculator import calculate_total_score
+from mas.llm import get_json_llm
+from mas.state import AgentState
+from mas.tools.logger import log_agent_action
+from mas.tools.score_calculator import calculate_total_score
 
 
 class CriterionScore(BaseModel):

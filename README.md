@@ -90,7 +90,7 @@ Calls `phi4-mini` to generate a well-formatted Markdown feedback report. Falls b
 ├── data/
 │   ├── rubric.json          # Rubric definition (criteria + max scores)
 │   └── submission.txt       # Sample student submission
-├── src/ctse_mas/
+├── src/mas/
 │   ├── agents/
 │   │   ├── coordinator.py
 │   │   ├── research.py
@@ -185,7 +185,7 @@ Report : /path/to/output/feedback_report.md
 
 The full Markdown feedback report is written to `output/feedback_report.md`.
 
-To grade a custom submission, edit `data/submission.txt` and `data/rubric.json`, or modify the paths in `src/ctse_mas/graph.py`.
+To grade a custom submission, edit `data/submission.txt` and `data/rubric.json`, or modify the paths in `src/mas/graph.py`.
 
 ---
 
