@@ -39,11 +39,13 @@ def _mock_llm_output() -> RubricScores:
             CriterionScore(
                 criterion_id="C1",
                 score=4,
+                assignment_mistake="none",
                 justification="Good definition provided.",
             ),
             CriterionScore(
                 criterion_id="C2",
                 score=3,
+                assignment_mistake="none",
                 justification="Writing is mostly clear.",
             ),
         ]
@@ -160,3 +162,57 @@ class TestAnalysisAgent:
 
         expected = {"scored_criteria", "total_score", "percentage", "grade", "agent_logs"}
         assert set(result.keys()) == expected
+
+    @patch("mas.agents.analysis.get_json_llm")
+    def test_assignment_mistake_is_preserved(self, mock_get_llm):
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = RubricScores(
+            scores=[
+                CriterionScore(
+                    criterion_id="C1",
+                    score=0,
+                    assignment_mistake="missing_answer",
+                    justification="Criterion not addressed.",
+                ),
+                CriterionScore(
+                    criterion_id="C2",
+                    score=0,
+                    assignment_mistake="out_of_context",
+                    justification="Response unrelated to criterion.",
+                ),
+            ]
+        )
+        mock_get_llm.return_value = mock_llm
+
+        result = analysis_agent(_make_state())
+
+        c1 = next(c for c in result["scored_criteria"] if c["criterion_id"] == "C1")
+        c2 = next(c for c in result["scored_criteria"] if c["criterion_id"] == "C2")
+        assert c1["assignment_mistake"] == "missing_answer"
+        assert c2["assignment_mistake"] == "out_of_context"
+
+    @patch("mas.agents.analysis.get_json_llm")
+    def test_invalid_assignment_mistake_defaults_to_none(self, mock_get_llm):
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = RubricScores(
+            scores=[
+                CriterionScore(
+                    criterion_id="C1",
+                    score=2,
+                    assignment_mistake="unknown",
+                    justification="Some relevant content.",
+                ),
+                CriterionScore(
+                    criterion_id="C2",
+                    score=2,
+                    assignment_mistake="none",
+                    justification="Some relevant content.",
+                ),
+            ]
+        )
+        mock_get_llm.return_value = mock_llm
+
+        result = analysis_agent(_make_state())
+
+        c1 = next(c for c in result["scored_criteria"] if c["criterion_id"] == "C1")
+        assert c1["assignment_mistake"] == "none"

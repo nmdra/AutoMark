@@ -510,9 +510,9 @@ class TestWriteAnalysisReport:
 class TestWriteMarkingSheet:
     _CRITERIA = [
         {"name": "Accuracy", "criterion_id": "C1", "score": 4, "max_score": 5,
-         "justification": "Good definition."},
+         "assignment_mistake": "missing_answer", "justification": "Good definition."},
         {"name": "Clarity", "criterion_id": "C2", "score": 3, "max_score": 5,
-         "justification": "Mostly clear."},
+         "assignment_mistake": "none", "justification": "Mostly clear."},
     ]
 
     def _write(self, tmp_path, **kwargs):
@@ -573,6 +573,7 @@ class TestWriteMarkingSheet:
         content = Path(path).read_text(encoding="utf-8")
         assert "Accuracy" in content
         assert "Clarity" in content
+        assert "Common Mistake" in content
 
     def test_contains_grade(self, tmp_path):
         path = self._write(tmp_path)
@@ -592,6 +593,29 @@ class TestWriteMarkingSheet:
             total_marks=10, grade="F", output_path=str(dest),
         )
         assert dest.exists()
+
+    def test_contains_common_assignment_mistakes_section(self, tmp_path):
+        path = self._write(tmp_path)
+        content = Path(path).read_text(encoding="utf-8")
+        assert "## Common Assignment Mistakes" in content
+        assert "- Accuracy: Missing answer" in content
+
+    def test_common_assignment_mistakes_none_when_not_identified(self, tmp_path):
+        path = self._write(
+            tmp_path,
+            scored_criteria=[
+                {
+                    "name": "Accuracy",
+                    "criterion_id": "C1",
+                    "score": 4,
+                    "max_score": 5,
+                    "assignment_mistake": "none",
+                    "justification": "Good definition.",
+                }
+            ],
+        )
+        content = Path(path).read_text(encoding="utf-8")
+        assert "- None identified." in content
 
 
 # ── pdf_processor ─────────────────────────────────────────────────────────────

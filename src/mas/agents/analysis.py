@@ -20,6 +20,13 @@ class CriterionScore(BaseModel):
 
     criterion_id: str = Field(description="The criterion ID from the rubric.")
     score: int = Field(description="Integer score between 0 and max_score.")
+    assignment_mistake: str = Field(
+        default="none",
+        description=(
+            "Common mistake classification for this criterion: "
+            "'none', 'missing_answer', or 'out_of_context'."
+        ),
+    )
     justification: str = Field(
         description="Single sentence justification, maximum 20 words."
     )
@@ -35,7 +42,11 @@ def _build_system_prompt() -> str:
     return (
         "You are a strict academic grader. "
         "For each criterion provided, assign an integer score between 0 and its "
-        "max_score and write a single-sentence justification of at most 20 words. "
+        "max_score and classify assignment_mistake as one of: "
+        "'none', 'missing_answer', 'out_of_context'. "
+        "Use 'missing_answer' when the criterion is not addressed. "
+        "Use 'out_of_context' when the response is unrelated to the criterion. "
+        "Write a single-sentence justification of at most 20 words. "
         "Respond ONLY with valid JSON matching the required schema. "
         "Do NOT calculate totals."
     )
@@ -107,15 +118,20 @@ def analysis_agent(state: AgentState) -> dict:
     name_by_id: dict[str, str] = {c["id"]: c["name"] for c in criteria}
 
     scored_criteria: list[dict[str, Any]] = []
+    allowed_mistakes = {"none", "missing_answer", "out_of_context"}
     for cs in llm_scores:
         max_score = max_by_id.get(cs.criterion_id, 0)
         clamped_score = max(0, min(int(cs.score), max_score))
+        mistake = str(cs.assignment_mistake or "none").strip().lower()
+        if mistake not in allowed_mistakes:
+            mistake = "none"
         scored_criteria.append(
             {
                 "criterion_id": cs.criterion_id,
                 "name": name_by_id.get(cs.criterion_id, cs.criterion_id),
                 "score": clamped_score,
                 "max_score": max_score,
+                "assignment_mistake": mistake,
                 "justification": cs.justification,
             }
         )

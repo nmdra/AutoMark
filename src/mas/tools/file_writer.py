@@ -159,21 +159,32 @@ def write_marking_sheet(
         "",
         "## Criterion Scores",
         "",
-        "| Criterion | Score | Max Score | Justification |",
-        "|-----------|-------|-----------|---------------|",
+        "| Criterion | Score | Max Score | Common Mistake | Justification |",
+        "|-----------|-------|-----------|----------------|---------------|",
     ]
 
+    common_mistakes: list[str] = []
     for c in scored_criteria:
         criterion_name = _escape_markdown_table_cell(
             c.get("name", c.get("criterion_id", ""))
         )
         score = _escape_markdown_table_cell(c.get("score", 0))
         max_score = _escape_markdown_table_cell(c.get("max_score", 0))
+        mistake = str(c.get("assignment_mistake", "none")).strip().lower()
+        if mistake == "missing_answer":
+            mistake_label = "Missing answer"
+            common_mistakes.append(f"{criterion_name}: {mistake_label}")
+        elif mistake == "out_of_context":
+            mistake_label = "Out of context"
+            common_mistakes.append(f"{criterion_name}: {mistake_label}")
+        else:
+            mistake_label = "None"
         justification = _escape_markdown_table_cell(c.get("justification", ""))
         lines.append(
             f"| {criterion_name} "
             f"| {score} "
             f"| {max_score} "
+            f"| {_escape_markdown_table_cell(mistake_label)} "
             f"| {justification} |"
         )
 
@@ -191,10 +202,18 @@ def write_marking_sheet(
             f"| {_escape_markdown_table_cell(grade)} |"
         ),
     ]
+    lines += [
+        "",
+        "## Common Assignment Mistakes",
+        "",
+    ]
+    if common_mistakes:
+        lines.extend(f"- {item}" for item in common_mistakes)
+    else:
+        lines.append("- None identified.")
 
     content = "\n".join(lines) + "\n"
     dest = Path(output_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(content, encoding="utf-8")
     return str(dest.resolve())
-

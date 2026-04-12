@@ -359,13 +359,15 @@ Supported formats:
       "id": "C1",
       "name": "Definition of Containerisation",
       "description": "Accurately defines containerisation and distinguishes it from virtual machines.",
+      "common_mistakes": ["missing_answer", "out_of_context"],
       "max_score": 5
     }
   ]
 }
 ```
 
-Required fields: `total_marks` (integer), `criteria` (array). Each criterion requires `id`, `name`, `description`, and `max_score`.
+Required fields: `total_marks` (integer), `criteria` (array). Each criterion requires `id`, `name`, `description`, and `max_score`.  
+Optional field: `common_mistakes` (array) to document expected mistakes such as `missing_answer` and `out_of_context`.
 
 ---
 
@@ -376,7 +378,7 @@ After a successful run, the following files are written to the `output/` directo
 | File | Description |
 |---|---|
 | `*_feedback_report.md` | Overall summary, per-criterion scores and justifications, improvement suggestions |
-| `*_marking_sheet.md` | Compact marking sheet suitable for sharing with the student |
+| `*_marking_sheet.md` | Compact marking sheet including per-criterion common-mistake tags and a common-mistakes summary |
 | `*_analysis_report.md` | Historical performance analysis with progression insights |
 
 An append-only structured JSON trace log (via `structlog`) is written to `agent_trace.log` in the project root on every run.
