@@ -11,6 +11,7 @@ from mas.config import settings
 from mas.llm import get_prose_llm
 from mas.state import AgentState
 from mas.tools.db_manager import get_past_reports, save_report
+from mas.tools.file_writer import write_analysis_report
 from mas.tools.logger import log_agent_action
 
 
@@ -61,6 +62,7 @@ def historical_agent(state: AgentState) -> dict:
     }
 
     progression_insights = ""
+    all_reports: list[dict[str, Any]] = []
     past_reports: list[dict[str, Any]] = []
 
     try:
@@ -73,10 +75,11 @@ def historical_agent(state: AgentState) -> dict:
             total_score=total_score,
             grade=grade,
         )
-        past_reports = get_past_reports(db_path, student_id)
+        all_reports = get_past_reports(db_path, student_id)
         # Exclude the record we just saved (last entry) to get truly past reports
-        past_reports = past_reports[:-1]
+        past_reports = all_reports[:-1]
     except Exception as exc:  # noqa: BLE001
+        all_reports = []
         past_reports = []
         progression_insights = ""
         db_error = str(exc)
@@ -103,9 +106,22 @@ def historical_agent(state: AgentState) -> dict:
         except Exception:  # noqa: BLE001
             progression_insights = ""
 
+    # Write the separate performance analysis report
+    analysis_report_path: str = state.get("analysis_report_path") or settings.analysis_report_path
+    try:
+        resolved_analysis_path = write_analysis_report(
+            past_reports=all_reports,
+            progression_insights=progression_insights,
+            student_id=student_id,
+            output_path=analysis_report_path,
+        )
+    except Exception:  # noqa: BLE001
+        resolved_analysis_path = ""
+
     outputs = {
         "past_reports_count": len(past_reports),
         "progression_insights_length": len(progression_insights),
+        "analysis_report_path": resolved_analysis_path,
     }
 
     log_entry = log_agent_action(
@@ -122,6 +138,7 @@ def historical_agent(state: AgentState) -> dict:
     updates: dict = {
         "past_reports": past_reports,
         "progression_insights": progression_insights,
+        "analysis_report_path": resolved_analysis_path,
         "agent_logs": existing_logs,
     }
     if db_error:

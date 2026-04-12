@@ -196,5 +196,5 @@ class TestHistoricalAgent:
         db_path = str(tmp_path / "students.db")
         result = historical_agent(_make_state(db_path))
 
-        expected = {"past_reports", "progression_insights", "agent_logs"}
+        expected = {"past_reports", "progression_insights", "analysis_report_path", "agent_logs"}
         assert set(result.keys()) == expected

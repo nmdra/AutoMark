@@ -14,7 +14,8 @@ class AgentState(TypedDict, total=False):
 
     # ── Ingestion ──────────────────────────────────────────────────────────
     student_id: str
-    ingestion_status: str    # "success" | "failed"
+    student_name: str            # extracted from PDF (may be empty for .txt)
+    ingestion_status: str        # "success" | "failed"
     submission_text: str
     rubric_data: dict[str, Any]
 
@@ -26,10 +27,12 @@ class AgentState(TypedDict, total=False):
     # ── Historical ─────────────────────────────────────────────────────────
     past_reports: list[dict[str, Any]]   # previous scored reports from DB
     progression_insights: str            # LLM-generated trend text
+    analysis_report_path: str            # path to written analysis report
 
     # ── Report ─────────────────────────────────────────────────────────────
     final_report: str
     output_filepath: str
+    marking_sheet_path: str              # path to written marking sheet
 
     # ── Observability ──────────────────────────────────────────────────────
     agent_logs: list[dict[str, Any]]   # append-only trace entries
