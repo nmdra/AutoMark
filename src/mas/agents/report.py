@@ -26,8 +26,17 @@ def _build_report_prompt(state: AgentState) -> str:
     assignment = rubric_data.get("assignment", "Unknown Assignment")
     progression_insights: str = state.get("progression_insights", "")
 
+    def _mistake_text(criterion: dict[str, Any]) -> str:
+        mistake = str(criterion.get("assignment_mistake", "none")).strip().lower()
+        if mistake == "missing_answer":
+            return "Missing answer"
+        if mistake == "out_of_context":
+            return "Out of context"
+        return "None"
+
     criteria_lines = "\n".join(
-        f"- **{c['name']}** ({c['criterion_id']}): {c['score']}/{c['max_score']} – {c['justification']}"
+        f"- **{c['name']}** ({c['criterion_id']}): {c['score']}/{c['max_score']} "
+        f"– Mistake: {_mistake_text(c)} – {c['justification']}"
         for c in scored_criteria
     )
 
@@ -76,10 +85,18 @@ def _build_fallback_report(state: AgentState) -> str:
         f"",
     ]
     for c in scored_criteria:
+        mistake = str(c.get("assignment_mistake", "none")).strip().lower()
+        if mistake == "missing_answer":
+            mistake_label = "Missing answer"
+        elif mistake == "out_of_context":
+            mistake_label = "Out of context"
+        else:
+            mistake_label = "None"
         lines.append(
             f"### {c['name']} ({c['criterion_id']})"
         )
         lines.append(f"**Score:** {c['score']}/{c['max_score']}")
+        lines.append(f"**Common Mistake:** {mistake_label}")
         lines.append(f"**Justification:** {c['justification']}")
         lines.append("")
 

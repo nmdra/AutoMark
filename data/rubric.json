@@ -7,24 +7,40 @@
       "id": "C1",
       "name": "Definition of Containerisation",
       "description": "Accurately defines containerisation and distinguishes it from virtual machines.",
+      "common_mistakes": [
+        "missing_answer",
+        "out_of_context"
+      ],
       "max_score": 5
     },
     {
       "id": "C2",
       "name": "Benefits of Containerisation",
       "description": "Identifies and explains at least four key benefits with sufficient detail.",
+      "common_mistakes": [
+        "missing_answer",
+        "out_of_context"
+      ],
       "max_score": 5
     },
     {
       "id": "C3",
       "name": "Role of Kubernetes",
       "description": "Explains Kubernetes purpose and its relevance to modern DevOps practices.",
+      "common_mistakes": [
+        "missing_answer",
+        "out_of_context"
+      ],
       "max_score": 5
     },
     {
       "id": "C4",
       "name": "Technical Accuracy and Depth",
       "description": "Demonstrates technical accuracy and appropriate depth throughout the response.",
+      "common_mistakes": [
+        "missing_answer",
+        "out_of_context"
+      ],
       "max_score": 5
     }
   ]
