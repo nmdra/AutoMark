@@ -28,4 +28,5 @@ output/
 .idea/
 *.swp
 
-*.db
+*.db*
+*.pdf
