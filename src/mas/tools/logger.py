@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+import structlog
+
 from mas.config import settings
 
 _LOG_FILE = Path(settings.log_file)
+_JSON_RENDERER = structlog.processors.JSONRenderer()
+_CONSOLE_RENDERER = structlog.dev.ConsoleRenderer(colors=False)
 
 
 def _as_int(value: Any) -> int | None:
@@ -61,14 +64,22 @@ def _extract_token_usage(response: Any) -> dict[str, int | None]:
 
 
 def _emit_entry(entry: dict[str, Any]) -> None:
+    _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    rendered_json = _JSON_RENDERER(None, "info", dict(entry))
     with _LOG_FILE.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry) + "\n")
+        fh.write(rendered_json + "\n")
 
     try:
         descriptor = str(entry.get("action") or entry.get("task_type") or "")
+        console_event = {
+            "event": (
+                f"{entry['event_type']}:{entry['status']} {descriptor}".strip()
+            ),
+            "service": entry.get("service"),
+            "session_id": entry.get("session_id"),
+        }
         print(
-            f"[{entry['timestamp']}] [{entry['service'].upper()}] "
-            f"{entry['event_type']}:{entry['status']} {descriptor}".strip(),
+            _CONSOLE_RENDERER(None, "info", console_event),
             file=sys.stdout,
             flush=True,
         )
