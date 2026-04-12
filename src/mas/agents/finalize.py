@@ -46,11 +46,11 @@ _DEFAULT_OUTPUT = "output/feedback_report.md"
 
 
 def _task_generate_insights(
-    session_id: str,
     student_id: str,
     past_reports: list[dict[str, Any]],
     total_score: float,
     grade: str,
+    session_id: str = "",
 ) -> str:
     """Call the LLM to produce progression-trend insights.
 
@@ -82,7 +82,7 @@ def _task_generate_insights(
         return ""
 
 
-def _task_generate_report_prose(session_id: str, state: AgentState) -> str:
+def _task_generate_report_prose(state: AgentState, session_id: str = "") -> str:
     """Call the LLM (or use the template fallback) to produce the feedback report.
 
     Note: ``progression_insights`` is intentionally absent from the prompt here
@@ -199,17 +199,17 @@ def finalize_agent(state: AgentState) -> dict:
         if run_insights:
             insights_future = executor.submit(
                 _task_generate_insights,
-                session_id,
                 student_id,
                 past_reports,
                 total_score,
                 grade,
+                session_id,
             )
 
         report_future: Future[str] = executor.submit(
             _task_generate_report_prose,
-            session_id,
             state_with_context,
+            session_id,
         )
 
         # Collect results (blocking until both threads complete)

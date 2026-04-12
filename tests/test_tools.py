@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -15,7 +16,7 @@ from mas.tools.file_writer import (
     write_feedback_report,
     write_marking_sheet,
 )
-from mas.tools.logger import log_agent_action
+from mas.tools.logger import log_agent_action, log_model_call
 from mas.tools.pdf_processor import convert_pdf_to_markdown
 from mas.tools.score_calculator import calculate_total_score
 
@@ -382,6 +383,71 @@ class TestLogAgentAction:
         assert "score_criteria" in captured.out.lower()
 
 
+class TestLogModelCall:
+    def test_logs_required_model_fields(self, tmp_path):
+        log_file = tmp_path / "trace.log"
+        response = SimpleNamespace(
+            usage_metadata={"input_tokens": 10, "output_tokens": 6, "total_tokens": 16}
+        )
+        with patch("mas.tools.logger._LOG_FILE", log_file):
+            entry = log_model_call(
+                session_id="s1",
+                service="analysis",
+                task_type="rubric_scoring",
+                model="phi4-mini",
+                latency_ms=123.45,
+                status="success",
+                response=response,
+            )
+
+        assert entry["event_type"] == "model_call"
+        assert entry["service"] == "analysis"
+        assert entry["task_type"] == "rubric_scoring"
+        assert entry["model"] == "phi4-mini"
+        assert entry["status"] == "success"
+        assert entry["prompt_tokens"] == 10
+        assert entry["completion_tokens"] == 6
+        assert entry["total_tokens"] == 16
+        assert entry["latency_ms"] == 123.45
+
+    def test_uses_ollama_token_metadata_fallback(self, tmp_path):
+        log_file = tmp_path / "trace.log"
+        response = SimpleNamespace(
+            response_metadata={"model": "gemma3", "prompt_eval_count": 12, "eval_count": 8}
+        )
+        with patch("mas.tools.logger._LOG_FILE", log_file):
+            entry = log_model_call(
+                session_id="s1",
+                service="historical",
+                task_type="progression_insights",
+                model="configured-name",
+                latency_ms=50.0,
+                status="success",
+                response=response,
+            )
+
+        assert entry["model"] == "gemma3"
+        assert entry["prompt_tokens"] == 12
+        assert entry["completion_tokens"] == 8
+        assert entry["total_tokens"] == 20
+
+    def test_logs_error_status_and_error_message(self, tmp_path):
+        log_file = tmp_path / "trace.log"
+        with patch("mas.tools.logger._LOG_FILE", log_file):
+            entry = log_model_call(
+                session_id="s1",
+                service="report",
+                task_type="feedback_report_generation",
+                model="phi4-mini",
+                latency_ms=10.0,
+                status="error",
+                error="timeout",
+            )
+
+        assert entry["status"] == "error"
+        assert entry["error"] == "timeout"
+
+
 # ── write_analysis_report ─────────────────────────────────────────────────────
 
 
@@ -603,4 +669,3 @@ class TestConvertPdfToMarkdown:
 
         result = convert_pdf_to_markdown(str(pdf_path))
         assert "IT21000001" in result
-

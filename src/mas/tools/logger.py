@@ -65,9 +65,10 @@ def _emit_entry(entry: dict[str, Any]) -> None:
         fh.write(json.dumps(entry) + "\n")
 
     try:
+        descriptor = str(entry.get("action") or entry.get("task_type") or "")
         print(
             f"[{entry['timestamp']}] [{entry['service'].upper()}] "
-            f"{entry['event_type']}:{entry['status']}",
+            f"{entry['event_type']}:{entry['status']} {descriptor}".strip(),
             file=sys.stdout,
             flush=True,
         )
@@ -126,7 +127,7 @@ def log_model_call(
         if isinstance(response_metadata, dict)
         else None
     )
-    resolved_model = response_model or model
+    resolved_model = str(response_model or model)
 
     entry: dict[str, Any] = {
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
@@ -135,14 +136,14 @@ def log_model_call(
         "service": service,
         "status": status,
         "model": resolved_model,
-        "task_type": task_type,
+        "task_type": str(task_type),
         "latency_ms": round(latency_ms, 2),
         "prompt_tokens": tokens["prompt_tokens"],
         "completion_tokens": tokens["completion_tokens"],
         "total_tokens": tokens["total_tokens"],
         "details": {
             "model": resolved_model,
-            "task_type": task_type,
+            "task_type": str(task_type),
             "latency_ms": round(latency_ms, 2),
             "tokens": tokens,
         },
