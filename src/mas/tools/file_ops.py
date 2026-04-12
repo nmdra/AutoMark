@@ -6,6 +6,7 @@ Combines file validation and file reading into a single module.
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -107,6 +108,11 @@ def read_text_file(path: str) -> str:
 def read_json_file(path: str) -> dict[str, Any]:
     """Read a JSON file and return the parsed object.
 
+    The raw file contents are cached in memory (keyed by absolute path) so
+    that repeated reads of the same rubric file – common when grading multiple
+    submissions with one rubric – avoid redundant disk I/O.  Each caller
+    receives a freshly parsed dict, so mutations do not affect the cache.
+
     Parameters
     ----------
     path:
@@ -122,14 +128,36 @@ def read_json_file(path: str) -> dict[str, Any]:
     RuntimeError
         Wraps ``OSError`` or ``json.JSONDecodeError`` encountered during read.
     """
+    raw = _read_json_raw(str(Path(path).resolve()))
     try:
-        text = Path(path).read_text(encoding="utf-8")
-    except OSError as exc:
-        raise RuntimeError(f"Failed to read JSON file '{path}': {exc}") from exc
-
-    try:
-        return json.loads(text)
+        return json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
             f"Failed to parse JSON file '{path}': {exc}"
+        ) from exc
+
+
+@lru_cache(maxsize=32)
+def _read_json_raw(absolute_path: str) -> str:
+    """Read and cache the raw text of a JSON file.
+
+    Caches the *string* (immutable) rather than a parsed dict so that callers
+    always receive independent dict objects and cannot corrupt the cache via
+    mutation.
+
+    Parameters
+    ----------
+    absolute_path:
+        Resolved absolute path to the JSON file (used as the cache key).
+
+    Raises
+    ------
+    RuntimeError
+        Wraps any ``OSError`` encountered while reading.
+    """
+    try:
+        return Path(absolute_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Failed to read JSON file '{absolute_path}': {exc}"
         ) from exc

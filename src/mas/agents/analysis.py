@@ -12,6 +12,7 @@ from mas.llm import get_json_llm
 from mas.state import AgentState
 from mas.tools.logger import log_agent_action
 from mas.tools.score_calculator import calculate_total_score
+from mas.config import settings
 
 
 class CriterionScore(BaseModel):
@@ -41,6 +42,10 @@ def _build_system_prompt() -> str:
 
 
 def _build_user_prompt(submission_text: str, rubric_data: dict[str, Any]) -> str:
+    # Truncate to avoid bloating the context window with very long submissions.
+    max_chars = settings.submission_max_chars
+    if len(submission_text) > max_chars:
+        submission_text = submission_text[:max_chars] + "\n\n[...truncated...]"
     criteria_summary = json.dumps(rubric_data.get("criteria", []), indent=2)
     return (
         f"## Student Submission\n\n{submission_text}\n\n"

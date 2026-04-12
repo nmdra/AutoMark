@@ -111,21 +111,24 @@ def report_agent(state: AgentState) -> dict:
         "output_path": output_path,
     }
 
-    # Attempt LLM-generated prose report
+    # Attempt LLM-generated prose report (when enabled via settings)
     try:
-        llm = get_prose_llm()
-        prompt = _build_report_prompt(state)
-        messages = [
-            SystemMessage(
-                content=(
-                    "You are a helpful academic feedback writer. "
-                    "Output clean, well-structured Markdown only."
-                )
-            ),
-            HumanMessage(content=prompt),
-        ]
-        response = llm.invoke(messages)
-        report_text: str = response.content
+        if settings.llm_report_enabled:
+            llm = get_prose_llm()
+            prompt = _build_report_prompt(state)
+            messages = [
+                SystemMessage(
+                    content=(
+                        "You are a helpful academic feedback writer. "
+                        "Output clean, well-structured Markdown only."
+                    )
+                ),
+                HumanMessage(content=prompt),
+            ]
+            response = llm.invoke(messages)
+            report_text: str = response.content
+        else:
+            report_text = _build_fallback_report(state)
     except Exception:
         report_text = _build_fallback_report(state)
 

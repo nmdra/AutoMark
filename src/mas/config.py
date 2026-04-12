@@ -32,6 +32,39 @@ AUTOMARK_ANALYSIS_REPORT_PATH
 AUTOMARK_MARKING_SHEET_PATH
     Default output path for the marking sheet report.
     Default: ``<project_root>/output/marking_sheet.md``
+
+AUTOMARK_NUM_CTX
+    Ollama context window size (tokens).  Smaller values reduce KV-cache
+    allocation and speed up prefill; increase only when submissions are long.
+    Default: ``4096``
+
+AUTOMARK_NUM_PREDICT
+    Maximum number of tokens the model will generate per response.
+    Capping this prevents runaway generation latency.
+    Default: ``512``
+
+AUTOMARK_LLM_REPORT_ENABLED
+    Set to ``false`` (case-insensitive) to skip the prose-report LLM call and
+    use the deterministic template instead.  Eliminates one full LLM round-trip.
+    Default: ``true``
+
+AUTOMARK_SUBMISSION_MAX_CHARS
+    Maximum characters of submission text sent to the analysis LLM.
+    Longer text is truncated before the prompt is built, reducing context size.
+    Default: ``8000``
+
+AUTOMARK_MIN_REPORTS_FOR_INSIGHTS
+    Minimum number of *past* reports required before the historical-insights
+    LLM call is made.  Set to ``2`` to require at least two prior sessions
+    before generating trend commentary.
+    Default: ``1``
+
+Ollama parallel-request note
+-----------------------------
+The finalize agent runs the historical-insights LLM call and the feedback-
+report prose LLM call concurrently using a ``ThreadPoolExecutor``.  To
+fully benefit from this, configure Ollama with ``OLLAMA_NUM_PARALLEL >= 2``
+on the Ollama server side.
 """
 
 from __future__ import annotations
@@ -71,6 +104,13 @@ class Settings:
     analysis_report_path: str
     marking_sheet_path: str
 
+    # ── LLM performance knobs ─────────────────────────────────────────────────
+    num_ctx: int
+    num_predict: int
+    llm_report_enabled: bool
+    submission_max_chars: int
+    min_reports_for_insights: int
+
 
 def _load_settings() -> Settings:
     root = _PROJECT_ROOT
@@ -89,6 +129,15 @@ def _load_settings() -> Settings:
         marking_sheet_path=_env(
             "AUTOMARK_MARKING_SHEET_PATH",
             str(root / "output" / "marking_sheet.md"),
+        ),
+        num_ctx=int(_env("AUTOMARK_NUM_CTX", "4096")),
+        num_predict=int(_env("AUTOMARK_NUM_PREDICT", "512")),
+        llm_report_enabled=_env(
+            "AUTOMARK_LLM_REPORT_ENABLED", "true"
+        ).lower() not in ("false", "0", "no"),
+        submission_max_chars=int(_env("AUTOMARK_SUBMISSION_MAX_CHARS", "8000")),
+        min_reports_for_insights=int(
+            _env("AUTOMARK_MIN_REPORTS_FOR_INSIGHTS", "1")
         ),
     )
 

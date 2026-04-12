@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from mas.config import settings
 from mas.graph import build_graph
 from mas.state import AgentState
+from mas.tools.db_manager import init_db
 
 # Project root: three levels up from src/mas/api.py → src/mas → src → project root
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -114,6 +115,10 @@ app = FastAPI(
 # for concurrent requests.
 _graph = build_graph()
 
+# Initialise the SQLite database once at startup so that every subsequent
+# save_report call avoids the CREATE TABLE / PRAGMA overhead.
+init_db(settings.db_path)
+
 # Allowlist pattern: relative paths with alphanumerics, dots, hyphens,
 # underscores, and forward slashes only.  Blocks traversal sequences and
 # shell-special characters before the path ever touches the filesystem.
@@ -168,14 +173,19 @@ def health() -> HealthResponse:
 
 
 @app.post("/grade", response_model=GradeResponse, summary="Grade a submission")
-def grade(request: GradeRequest) -> GradeResponse:
+async def grade(request: GradeRequest) -> GradeResponse:
     """Validate file paths, run the LangGraph pipeline, and return the graded result.
+
+    The pipeline is executed in a worker thread (via ``asyncio.to_thread``) so
+    the event loop remains unblocked while the LLM calls are in flight.
 
     Raises
     ------
     422 – if either file path is outside the allowed data directory or does not exist.
     500 – if the pipeline encounters an internal error.
     """
+    import asyncio
+
     submission = _resolve_safe_path(request.submission_path)
     rubric = _resolve_safe_path(request.rubric_path)
 
@@ -208,7 +218,7 @@ def grade(request: GradeRequest) -> GradeResponse:
     }
 
     try:
-        final_state: AgentState = _graph.invoke(initial_state)
+        final_state: AgentState = await asyncio.to_thread(_graph.invoke, initial_state)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -305,7 +315,7 @@ def grade(request: GradeRequest) -> GradeResponse:
     response_model=list[LogEntry],
     summary="Retrieve session trace logs",
 )
-def session_logs(session_id: str) -> list[LogEntry]:
+async def session_logs(session_id: str) -> list[LogEntry]:
     """Read agent_trace.log and return all entries matching *session_id*.
 
     Raises

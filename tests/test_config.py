@@ -49,6 +49,26 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.marking_sheet_path.endswith("marking_sheet.md")
 
+    def test_default_num_ctx(self):
+        s = _reload_settings({})
+        assert s.num_ctx == 4096
+
+    def test_default_num_predict(self):
+        s = _reload_settings({})
+        assert s.num_predict == 512
+
+    def test_default_llm_report_enabled(self):
+        s = _reload_settings({})
+        assert s.llm_report_enabled is True
+
+    def test_default_submission_max_chars(self):
+        s = _reload_settings({})
+        assert s.submission_max_chars == 8000
+
+    def test_default_min_reports_for_insights(self):
+        s = _reload_settings({})
+        assert s.min_reports_for_insights == 1
+
     def test_default_db_path_contains_data_directory(self):
         s = _reload_settings({})
         assert "data" in s.db_path
@@ -90,6 +110,30 @@ class TestSettingsEnvOverrides:
     def test_marking_sheet_path_override(self):
         s = _reload_settings({"AUTOMARK_MARKING_SHEET_PATH": "/tmp/sheet.md"})
         assert s.marking_sheet_path == "/tmp/sheet.md"
+
+    def test_num_ctx_override(self):
+        s = _reload_settings({"AUTOMARK_NUM_CTX": "2048"})
+        assert s.num_ctx == 2048
+
+    def test_num_predict_override(self):
+        s = _reload_settings({"AUTOMARK_NUM_PREDICT": "256"})
+        assert s.num_predict == 256
+
+    def test_llm_report_enabled_false(self):
+        s = _reload_settings({"AUTOMARK_LLM_REPORT_ENABLED": "false"})
+        assert s.llm_report_enabled is False
+
+    def test_llm_report_enabled_true_by_default(self):
+        s = _reload_settings({})
+        assert s.llm_report_enabled is True
+
+    def test_submission_max_chars_override(self):
+        s = _reload_settings({"AUTOMARK_SUBMISSION_MAX_CHARS": "4000"})
+        assert s.submission_max_chars == 4000
+
+    def test_min_reports_for_insights_override(self):
+        s = _reload_settings({"AUTOMARK_MIN_REPORTS_FOR_INSIGHTS": "2"})
+        assert s.min_reports_for_insights == 2
 
     def test_empty_env_var_falls_back_to_default(self):
         s = _reload_settings({"AUTOMARK_MODEL_NAME": ""})
@@ -138,5 +182,10 @@ class TestModuleSingleton:
             "output_path",
             "analysis_report_path",
             "marking_sheet_path",
+            "num_ctx",
+            "num_predict",
+            "llm_report_enabled",
+            "submission_max_chars",
+            "min_reports_for_insights",
         ):
             assert hasattr(settings, field)

@@ -86,7 +86,7 @@ def historical_agent(state: AgentState) -> dict:
     else:
         db_error = ""
 
-    if past_reports:
+    if len(past_reports) >= settings.min_reports_for_insights:
         try:
             llm = get_prose_llm()
             prompt = _build_insights_prompt(

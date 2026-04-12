@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mas.agents.pdf_ingestion import _build_extraction_prompt, pdf_ingestion_agent
+from mas.agents.pdf_ingestion import (
+    _build_extraction_prompt,
+    _regex_extract_student_id,
+    _regex_extract_student_name,
+    pdf_ingestion_agent,
+)
 from mas.state import AgentState
 
 SAMPLE_RUBRIC = {
@@ -59,6 +64,39 @@ class TestBuildExtractionPrompt:
     def test_contains_markdown_text(self):
         prompt = _build_extraction_prompt("my submission here")
         assert "my submission here" in prompt
+
+
+# ── Regex extraction helpers ──────────────────────────────────────────────────
+
+
+class TestRegexExtractors:
+    def test_student_id_standard(self):
+        assert _regex_extract_student_id("Student ID: IT21000001") == "IT21000001"
+
+    def test_student_id_short_form(self):
+        assert _regex_extract_student_id("ID: ABC123") == "ABC123"
+
+    def test_student_id_case_insensitive(self):
+        assert _regex_extract_student_id("student id: xyz99") == "xyz99"
+
+    def test_student_id_not_found(self):
+        assert _regex_extract_student_id("No identifier here") == ""
+
+    def test_student_name_standard(self):
+        assert _regex_extract_student_name("Student Name: Alice Smith") == "Alice Smith"
+
+    def test_student_name_short_form(self):
+        assert _regex_extract_student_name("Name: Bob Jones") == "Bob Jones"
+
+    def test_student_name_case_insensitive(self):
+        assert _regex_extract_student_name("name: Charlie Brown") == "Charlie Brown"
+
+    def test_student_name_not_found(self):
+        assert _regex_extract_student_name("No name line here") == ""
+
+    def test_student_name_multiline(self):
+        text = "Student ID: IT21000001\nStudent Name: Alice Smith\nContent"
+        assert _regex_extract_student_name(text) == "Alice Smith"
 
 
 # ── pdf_ingestion_agent ───────────────────────────────────────────────────────
@@ -270,3 +308,43 @@ class TestPdfIngestionAgent:
         assert result["submission_text"] == "Raw PDF markdown content."
         assert result["ingestion_status"] == "success"
         assert "error" in result
+
+    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
+    def test_regex_fast_path_skips_llm_when_both_fields_found(
+        self, mock_convert, mock_llm, tmp_path
+    ):
+        """When regex finds both student_id and student_name, the LLM must NOT be called."""
+        pdf = _fake_pdf(tmp_path)
+        rub = _write_rubric(tmp_path)
+        mock_convert.return_value = (
+            "Student ID: IT21000099\nStudent Name: Jane Doe\nContent here."
+        )
+
+        result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
+
+        mock_llm.assert_not_called()
+        assert result["student_id"] == "IT21000099"
+        assert result["student_name"] == "Jane Doe"
+        assert result["ingestion_status"] == "success"
+
+    @patch("mas.agents.pdf_ingestion.get_json_llm")
+    @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
+    def test_llm_called_when_name_missing_from_markdown(
+        self, mock_convert, mock_llm, tmp_path
+    ):
+        """When student_name cannot be found by regex, the LLM must be invoked."""
+        pdf = _fake_pdf(tmp_path)
+        rub = _write_rubric(tmp_path)
+        # Only student_id is present; no name line.
+        mock_convert.return_value = "Student ID: IT21000042\nContent."
+        det = MagicMock()
+        det.student_id = "IT21000042"
+        det.student_name = "Bob Smith"
+        det.submission_text = "Content."
+        mock_llm.return_value.invoke.return_value = det
+
+        result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
+
+        mock_llm.return_value.invoke.assert_called_once()
+        assert result["student_name"] == "Bob Smith"
