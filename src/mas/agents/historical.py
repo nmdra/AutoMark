@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from mas.config import settings
 from mas.llm import get_prose_llm
 from mas.state import AgentState
 from mas.tools.db_manager import get_past_reports, save_report
 from mas.tools.logger import log_agent_action
-
-_DEFAULT_DB_PATH = str(
-    Path(__file__).parent.parent.parent.parent / "data" / "students.db"
-)
 
 
 def _build_insights_prompt(
@@ -54,7 +50,7 @@ def historical_agent(state: AgentState) -> dict:
     scored_criteria: list[dict[str, Any]] = state.get("scored_criteria", [])
     total_score: float = state.get("total_score", 0)
     grade: str = state.get("grade", "F")
-    db_path: str = state.get("db_path") or _DEFAULT_DB_PATH
+    db_path: str = state.get("db_path") or settings.db_path
     timestamp: str = datetime.now(tz=timezone.utc).isoformat()
 
     inputs = {

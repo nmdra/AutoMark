@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_LOG_FILE = Path("agent_trace.log")
+from mas.config import settings
+
+_LOG_FILE = Path(settings.log_file)
 
 
 def log_agent_action(
