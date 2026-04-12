@@ -532,6 +532,53 @@ class TestWriteMarkingSheet:
 
 
 class TestConvertPdfToMarkdown:
+    def _write_minimal_pdf(self, path, text):
+        escaped_text = (
+            text.replace("\\", "\\\\")
+            .replace("(", r"\(")
+            .replace(")", r"\)")
+        )
+        lines = escaped_text.splitlines() or [""]
+        content_lines = ["BT", "/F1 12 Tf"]
+        y = 750
+        for line in lines:
+            content_lines.append(f"50 {y} Td ({line}) Tj")
+            y -= 16
+        content_lines.append("ET")
+        content_stream = "\n".join(content_lines).encode("utf-8")
+
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            (
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+            ),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Length %d >>\nstream\n%b\nendstream" % (len(content_stream), content_stream),
+        ]
+
+        pdf = bytearray(b"%PDF-1.4\n")
+        offsets = [0]
+        for index, obj in enumerate(objects, start=1):
+            offsets.append(len(pdf))
+            pdf.extend(f"{index} 0 obj\n".encode("ascii"))
+            pdf.extend(obj)
+            pdf.extend(b"\nendobj\n")
+
+        xref_start = len(pdf)
+        pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+        pdf.extend(b"0000000000 65535 f \n")
+        for offset in offsets[1:]:
+            pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+        pdf.extend(
+            (
+                f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+                f"startxref\n{xref_start}\n%%EOF\n"
+            ).encode("ascii")
+        )
+        path.write_bytes(pdf)
+
     def test_missing_file_raises_file_not_found(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="PDF file not found"):
             convert_pdf_to_markdown(str(tmp_path / "missing.pdf"))
@@ -543,28 +590,16 @@ class TestConvertPdfToMarkdown:
             convert_pdf_to_markdown(str(txt))
 
     def test_successful_conversion(self, tmp_path):
-        import pymupdf  # type: ignore[import]
-
         pdf_path = tmp_path / "test.pdf"
-        doc = pymupdf.open()
-        page = doc.new_page()
-        page.insert_text((50, 100), "Student ID: IT21000001\nHello World")
-        doc.save(str(pdf_path))
-        doc.close()
+        self._write_minimal_pdf(pdf_path, "Student ID: IT21000001\nHello World")
 
         result = convert_pdf_to_markdown(str(pdf_path))
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_conversion_contains_text(self, tmp_path):
-        import pymupdf  # type: ignore[import]
-
         pdf_path = tmp_path / "test.pdf"
-        doc = pymupdf.open()
-        page = doc.new_page()
-        page.insert_text((50, 100), "Student ID: IT21000001")
-        doc.save(str(pdf_path))
-        doc.close()
+        self._write_minimal_pdf(pdf_path, "Student ID: IT21000001")
 
         result = convert_pdf_to_markdown(str(pdf_path))
         assert "IT21000001" in result
