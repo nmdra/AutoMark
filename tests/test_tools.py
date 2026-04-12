@@ -9,8 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ctse_mas.tools.file_reader import read_json_file, read_text_file
-from ctse_mas.tools.file_validator import validate_submission_files
+from ctse_mas.tools.file_ops import read_json_file, read_text_file, validate_submission_files
 from ctse_mas.tools.file_writer import write_feedback_report
 from ctse_mas.tools.logger import log_agent_action
 from ctse_mas.tools.score_calculator import calculate_total_score

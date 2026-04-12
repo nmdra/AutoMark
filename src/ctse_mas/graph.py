@@ -1,30 +1,29 @@
 """LangGraph pipeline definition and CLI entry point.
 
 Pipeline flow:
-    coordinator → research → (conditional) analysis → report
-                                    ↓ (research_status != 'success')
-                                  report  (graceful degradation)
+    ingestion → (conditional) analysis → historical → report
+                      ↓ (ingestion_status != 'success')
+                    report  (graceful degradation)
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from langgraph.graph import END, StateGraph
 
 from ctse_mas.agents.analysis import analysis_agent
-from ctse_mas.agents.coordinator import coordinator_agent
+from ctse_mas.agents.historical import historical_agent
+from ctse_mas.agents.ingestion import ingestion_agent
 from ctse_mas.agents.report import report_agent
-from ctse_mas.agents.research import research_agent
 from ctse_mas.state import AgentState
 
 
 # ── Routing function ──────────────────────────────────────────────────────────
 
-def _route_after_research(state: AgentState) -> str:
+def _route_after_ingestion(state: AgentState) -> str:
     """Route to 'analysis' on success, or 'report' for graceful degradation."""
-    if state.get("research_status") == "success":
+    if state.get("ingestion_status") == "success":
         return "analysis"
     return "report"
 
@@ -36,28 +35,26 @@ def build_graph() -> StateGraph:
     builder = StateGraph(AgentState)
 
     # Register agent nodes
-    builder.add_node("coordinator", coordinator_agent)
-    builder.add_node("research", research_agent)
+    builder.add_node("ingestion", ingestion_agent)
     builder.add_node("analysis", analysis_agent)
+    builder.add_node("historical", historical_agent)
     builder.add_node("report", report_agent)
 
     # Entry point
-    builder.set_entry_point("coordinator")
+    builder.set_entry_point("ingestion")
 
-    # Edges
-    builder.add_edge("coordinator", "research")
-
-    # Conditional edge: research → analysis | report
+    # Conditional edge: ingestion → analysis | report
     builder.add_conditional_edges(
-        "research",
-        _route_after_research,
+        "ingestion",
+        _route_after_ingestion,
         {
             "analysis": "analysis",
             "report": "report",
         },
     )
 
-    builder.add_edge("analysis", "report")
+    builder.add_edge("analysis", "historical")
+    builder.add_edge("historical", "report")
     builder.add_edge("report", END)
 
     return builder.compile()
@@ -70,10 +67,12 @@ def main() -> None:
     base = Path(__file__).parent.parent.parent  # project root
     submission_path = str(base / "data" / "submission.txt")
     rubric_path = str(base / "data" / "rubric.json")
+    db_path = str(base / "data" / "students.db")
 
     initial_state: AgentState = {
         "submission_path": submission_path,
         "rubric_path": rubric_path,
+        "db_path": db_path,
         "output_filepath": str(base / "output" / "feedback_report.md"),
         "agent_logs": [],
     }
@@ -82,6 +81,7 @@ def main() -> None:
     final_state = graph.invoke(initial_state)
 
     print("\n=== Auto-Grader Complete ===")
+    print(f"Student: {final_state.get('student_id', 'N/A')}")
     print(f"Grade  : {final_state.get('grade', 'N/A')}")
     print(f"Score  : {final_state.get('total_score', 0)}")
     print(f"Report : {final_state.get('output_filepath', 'N/A')}")

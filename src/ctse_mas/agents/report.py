@@ -23,10 +23,17 @@ def _build_report_prompt(state: AgentState) -> str:
     total_marks = rubric_data.get("total_marks", 0)
     module = rubric_data.get("module", "Unknown Module")
     assignment = rubric_data.get("assignment", "Unknown Assignment")
+    progression_insights: str = state.get("progression_insights", "")
 
     criteria_lines = "\n".join(
         f"- **{c['name']}** ({c['criterion_id']}): {c['score']}/{c['max_score']} – {c['justification']}"
         for c in scored_criteria
+    )
+
+    progression_section = (
+        f"\n**Progression Insights:**\n{progression_insights}\n"
+        if progression_insights
+        else ""
     )
 
     return (
@@ -35,12 +42,14 @@ def _build_report_prompt(state: AgentState) -> str:
         f"**Assignment:** {assignment}\n"
         f"**Total Score:** {total_score}/{total_marks}\n"
         f"**Grade:** {grade}\n\n"
-        f"**Criterion Scores:**\n{criteria_lines}\n\n"
+        f"**Criterion Scores:**\n{criteria_lines}\n"
+        f"{progression_section}\n"
         "The report must include:\n"
         "1. A brief overall summary (2-3 sentences).\n"
         "2. Per-criterion feedback referencing the score and justification.\n"
         "3. Constructive suggestions for improvement.\n"
-        "Format the output as clean Markdown."
+        + ("4. A progression section summarising the student's historical trend.\n" if progression_insights else "")
+        + "Format the output as clean Markdown."
     )
 
 

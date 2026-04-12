@@ -1,4 +1,4 @@
-.PHONY: start stop run test logs clean pull-model
+.PHONY: start stop run test logs clean pull-model init-db
 
 # Start Ollama with CPU profile (default)
 start:
@@ -27,6 +27,10 @@ test:
 # Show Ollama service logs
 logs:
 	docker compose logs -f ollama
+
+# Initialise the SQLite student database
+init-db:
+	uv run python -c "from ctse_mas.tools.db_manager import init_db; init_db('data/students.db'); print('Database initialised at data/students.db')"
 
 # Remove containers, volumes and cached outputs
 clean:
