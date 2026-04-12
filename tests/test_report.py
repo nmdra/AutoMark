@@ -134,5 +134,5 @@ class TestReportAgent:
 
         result = report_agent(_make_state(output_path=output))
 
-        expected = {"final_report", "output_filepath", "marking_sheet_path", "agent_logs"}
+        expected = {"final_report", "summary", "output_filepath", "marking_sheet_path", "agent_logs"}
         assert set(result.keys()) == expected

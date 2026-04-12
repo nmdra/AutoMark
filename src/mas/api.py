@@ -19,6 +19,7 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -73,10 +74,13 @@ class GradeResponse(BaseModel):
     student_id: str
     student_name: str
     total_score: float
+    percentage: float
     grade: str
+    summary: str
     criteria: list[CriterionResult]
     feedback_report: str
     output_filepath: str
+    marking_sheet_path: str
 
 
 class HealthResponse(BaseModel):
@@ -189,7 +193,7 @@ def grade(request: GradeRequest) -> GradeResponse:
 
     session_id = str(uuid.uuid4())
 
-    # Generate session-specific output paths to prevent concurrent-request conflicts.
+    # Use session-scoped temp paths; files are renamed with student info after the run.
     _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     session_output = str(_OUTPUT_DIR / f"feedback_report_{session_id}.md")
     session_marking = str(_OUTPUT_DIR / f"marking_sheet_{session_id}.md")
@@ -218,6 +222,31 @@ def grade(request: GradeRequest) -> GradeResponse:
             detail=f"Pipeline error: {final_state['error']}",
         )
 
+    student_id = final_state.get("student_id") or ""
+    student_name = final_state.get("student_name") or ""
+
+    # Rename output files to include timestamp, student name, and student ID.
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", student_name) if student_name else "unknown"
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", student_id) if student_id else "unknown"
+    file_stem = f"{timestamp}_{safe_name}_{safe_id}"
+
+    final_output = str(_OUTPUT_DIR / f"{file_stem}_feedback_report.md")
+    final_marking = str(_OUTPUT_DIR / f"{file_stem}_marking_sheet.md")
+
+    current_output = final_state.get("output_filepath") or ""
+    current_marking = final_state.get("marking_sheet_path") or ""
+
+    if current_output and Path(current_output).exists():
+        Path(current_output).rename(final_output)
+    else:
+        final_output = current_output
+
+    if current_marking and Path(current_marking).exists():
+        Path(current_marking).rename(final_marking)
+    else:
+        final_marking = current_marking
+
     criteria: list[CriterionResult] = [
         CriterionResult(
             criterion_id=c["criterion_id"],
@@ -231,13 +260,16 @@ def grade(request: GradeRequest) -> GradeResponse:
 
     return GradeResponse(
         session_id=session_id,
-        student_id=final_state.get("student_id") or "",
-        student_name=final_state.get("student_name") or "",
+        student_id=student_id,
+        student_name=student_name,
         total_score=final_state.get("total_score") or 0.0,
+        percentage=final_state.get("percentage") or 0.0,
         grade=final_state.get("grade") or "N/A",
+        summary=final_state.get("summary") or "",
         criteria=criteria,
         feedback_report=final_state.get("final_report") or "",
-        output_filepath=final_state.get("output_filepath") or "",
+        output_filepath=final_output,
+        marking_sheet_path=final_marking,
     )
 
 

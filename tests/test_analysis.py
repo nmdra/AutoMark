@@ -158,5 +158,5 @@ class TestAnalysisAgent:
 
         result = analysis_agent(_make_state())
 
-        expected = {"scored_criteria", "total_score", "grade", "agent_logs"}
+        expected = {"scored_criteria", "total_score", "percentage", "grade", "agent_logs"}
         assert set(result.keys()) == expected
