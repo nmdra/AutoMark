@@ -5,11 +5,18 @@ Endpoints
 GET  /health                        – liveness check
 POST /grade                         – run the grading pipeline
 GET  /sessions/{session_id}/logs    – retrieve trace log entries for a session
+
+Security note
+-------------
+File paths supplied by clients are resolved to absolute paths and validated
+against a configurable base directory (``AUTOMARK_DATA_BASE_DIR``, defaulting
+to the project data folder) to prevent path-traversal attacks.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,6 +27,13 @@ from pydantic import BaseModel, Field
 from mas.config import settings
 from mas.graph import build_graph
 from mas.state import AgentState
+
+# Allowed base directory for submission and rubric files.
+# Defaults to the project data directory; override with AUTOMARK_DATA_BASE_DIR.
+_DATA_BASE_DIR: Path = Path(
+    os.environ.get("AUTOMARK_DATA_BASE_DIR", "")
+    or Path(settings.submission_path).parent
+).resolve()
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
 
@@ -85,6 +99,29 @@ app = FastAPI(
 )
 
 
+# ── Path validation helper ─────────────────────────────────────────────────────
+
+
+def _resolve_safe_path(raw: str) -> Path:
+    """Resolve *raw* to an absolute path and verify it stays within *_DATA_BASE_DIR*.
+
+    Raises ``HTTPException(422)`` when the resolved path escapes the allowed
+    base directory (path-traversal protection).
+    """
+    resolved = Path(raw).resolve()
+    try:
+        resolved.relative_to(_DATA_BASE_DIR)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Path '{raw}' is outside the allowed data directory "
+                f"({_DATA_BASE_DIR}). Supply a path inside the data folder."
+            ),
+        )
+    return resolved
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 
@@ -100,11 +137,11 @@ def grade(request: GradeRequest) -> GradeResponse:
 
     Raises
     ------
-    422 – if either file path does not exist on disk.
+    422 – if either file path is outside the allowed data directory or does not exist.
     500 – if the pipeline encounters an internal error.
     """
-    submission = Path(request.submission_path)
-    rubric = Path(request.rubric_path)
+    submission = _resolve_safe_path(request.submission_path)
+    rubric = _resolve_safe_path(request.rubric_path)
 
     if not submission.exists():
         raise HTTPException(
@@ -183,8 +220,8 @@ def session_logs(session_id: str) -> list[LogEntry]:
 
     if not log_path.exists():
         raise HTTPException(
-            status_code=404,
-            detail=f"No log entries found for session '{session_id}'.",
+            status_code=500,
+            detail="Log file is unavailable; no grading runs have been recorded yet.",
         )
 
     entries: list[LogEntry] = []
@@ -223,10 +260,11 @@ def session_logs(session_id: str) -> list[LogEntry]:
 
     return entries
 
-
 # ── Development entry point ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("mas.api:app", host="0.0.0.0", port=8000, reload=True)
+    # Bind to localhost only for local development.
+    # Use `uvicorn mas.api:app --host 0.0.0.0` (or the Docker CMD) for network access.
+    uvicorn.run("mas.api:app", host="127.0.0.1", port=8000, reload=True)
