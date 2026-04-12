@@ -78,7 +78,6 @@ class GradeResponse(BaseModel):
     grade: str
     summary: str
     criteria: list[CriterionResult]
-    feedback_report: str
     output_filepath: str
     marking_sheet_path: str
 
@@ -296,7 +295,6 @@ def grade(request: GradeRequest) -> GradeResponse:
         grade=final_state.get("grade") or "N/A",
         summary=final_state.get("summary") or "",
         criteria=criteria,
-        feedback_report=final_state.get("final_report") or "",
         output_filepath=final_output,
         marking_sheet_path=final_marking,
     )
