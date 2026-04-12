@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mas.agents.pdf_ingestion import (
+    _build_metadata_context,
     _build_extraction_prompt,
     _regex_extract_student_id,
     _regex_extract_student_name,
@@ -64,6 +65,23 @@ class TestBuildExtractionPrompt:
     def test_contains_markdown_text(self):
         prompt = _build_extraction_prompt("my submission here")
         assert "my submission here" in prompt
+
+    def test_does_not_request_submission_text_extraction(self):
+        prompt = _build_extraction_prompt("some text")
+        assert "submission_text" not in prompt.lower()
+
+
+class TestBuildMetadataContext:
+    def test_keeps_identity_lines(self):
+        text = "Body line\nStudent ID: IT21000001\nStudent Name: Alice Smith\nMore body"
+        context = _build_metadata_context(text)
+        assert "Student ID: IT21000001" in context
+        assert "Student Name: Alice Smith" in context
+
+    def test_truncates_long_markdown_context(self):
+        text = "Student ID: IT21000001\n" + ("A" * 3000) + "\nName: Alice"
+        context = _build_metadata_context(text)
+        assert len(context) < len(text)
 
 
 # ── Regex extraction helpers ──────────────────────────────────────────────────
@@ -156,7 +174,28 @@ class TestPdfIngestionAgent:
 
         result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
 
-        assert result["submission_text"] == "Cleaned submission body."
+        assert result["submission_text"] == "Raw markdown."
+
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
+    def test_llm_prompt_uses_compact_metadata_context(self, mock_convert, mock_llm, tmp_path):
+        pdf = _fake_pdf(tmp_path)
+        rub = _write_rubric(tmp_path)
+        mock_convert.return_value = (
+            "Student ID: IT21000042\n"
+            + ("X" * 3000)
+            + "\nStudent Name: Bob Smith\nTAIL_UNIQUE_TOKEN"
+        )
+        mock_details = MagicMock()
+        mock_details.student_id = "IT21000042"
+        mock_details.student_name = "Bob Smith"
+        mock_llm.return_value.invoke.return_value = mock_details
+
+        pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
+
+        messages = mock_llm.return_value.invoke.call_args[0][0]
+        user_prompt = messages[1].content
+        assert "TAIL_UNIQUE_TOKEN" not in user_prompt
 
     @patch("mas.agents.pdf_ingestion.get_light_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")

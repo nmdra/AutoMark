@@ -39,9 +39,6 @@ class StudentDetails(BaseModel):
     student_name: str = Field(
         description="The student's full name. Empty string if not found."
     )
-    submission_text: str = Field(
-        description="The complete submission content, cleaned of cover-page boilerplate."
-    )
 
 
 def _regex_extract_student_id(text: str) -> str:
@@ -67,16 +64,54 @@ def _regex_extract_student_name(text: str) -> str:
     return name.strip()
 
 
-def _build_extraction_prompt(markdown_text: str) -> str:
+_METADATA_CONTEXT_MAX_CHARS = 2500
+_IDENTITY_LINE_RE = re.compile(
+    r"\b(student\s*)?(id|name|registration|reg\s*no|index|roll\s*no)\b",
+    re.IGNORECASE,
+)
+
+
+def _build_metadata_context(markdown_text: str) -> str:
+    """Build a compact context for identity-field extraction."""
+    normalized = markdown_text.strip()
+    if not normalized:
+        return ""
+
+    top_chunk = normalized[:_METADATA_CONTEXT_MAX_CHARS]
+    identity_lines: list[str] = []
+    seen: set[str] = set()
+    for line in normalized.splitlines():
+        clean_line = line.strip()
+        if not clean_line:
+            continue
+        if not _IDENTITY_LINE_RE.search(clean_line):
+            continue
+        if clean_line in seen:
+            continue
+        seen.add(clean_line)
+        identity_lines.append(clean_line)
+        if len(identity_lines) >= 20:
+            break
+
+    if not identity_lines:
+        return top_chunk
+
     return (
-        "The following is a student submission extracted from a PDF. "
-        "Extract the student's ID, full name, and submission body text.\n\n"
+        f"{top_chunk}\n\n"
+        "## Candidate Identity Lines\n"
+        f"{chr(10).join(identity_lines)}"
+    )
+
+
+def _build_extraction_prompt(metadata_context: str) -> str:
+    return (
+        "The following is metadata-focused text extracted from a student PDF submission. "
+        "Extract only the student's ID and full name.\n\n"
         "Rules:\n"
         "- student_id: look for patterns like 'Student ID:', 'ID:', or a numeric/alphanumeric code.\n"
         "- student_name: look for patterns like 'Name:', 'Student Name:', or a proper name near the top.\n"
-        "- submission_text: the substantive academic content (exclude cover pages, headers, footers).\n"
         "- Return empty strings for fields that cannot be found.\n\n"
-        f"## PDF Content\n\n{markdown_text}"
+        f"## Metadata Content\n\n{metadata_context}"
     )
 
 
@@ -130,6 +165,7 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
             raise ValueError(f"PDF submission file is empty: {submission_path}")
 
         markdown_text = convert_pdf_to_markdown(submission_path)
+        submission_text = markdown_text
         rubric_data = read_json_file(rubric_path)
         stage1_ok = True
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
@@ -139,6 +175,8 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
     if stage1_ok:
         regex_id = ""
         regex_name = ""
+        student_id = ""
+        student_name = ""
         if settings.pdf_regex_fast_path_enabled:
             # Fast path: try regex extraction first – no LLM call needed when both
             # student_id and student_name are found deterministically.
@@ -147,32 +185,30 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
             if regex_id and regex_name:
                 student_id = regex_id
                 student_name = regex_name
-                submission_text = markdown_text
 
-        if not submission_text:
+        if not (student_id and student_name):
             # Either regex is disabled, regex did not fully match, or fast-path
             # extraction was intentionally bypassed; use the LLM extractor.
             try:
                 llm = get_light_json_llm(schema=StudentDetails)
+                metadata_context = _build_metadata_context(markdown_text)
                 messages = [
                     SystemMessage(
                         content=(
                             "You are a data extraction assistant. "
-                            "Extract student details from the provided PDF text. "
+                            "Extract student identity details from the provided PDF text snippet. "
                             "Respond ONLY with valid JSON matching the required schema."
                         )
                     ),
-                    HumanMessage(content=_build_extraction_prompt(markdown_text)),
+                    HumanMessage(content=_build_extraction_prompt(metadata_context)),
                 ]
                 result: StudentDetails = llm.invoke(messages)
-                student_id = result.student_id
-                student_name = result.student_name
-                submission_text = result.submission_text or markdown_text
+                student_id = (result.student_id or regex_id).strip()
+                student_name = (result.student_name or regex_name).strip()
             except Exception as exc:  # noqa: BLE001
                 # Fall back to regex results (when available) + raw markdown.
                 student_id = regex_id
                 student_name = regex_name
-                submission_text = markdown_text
                 error = str(exc)
 
         if rubric_data:

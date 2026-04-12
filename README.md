@@ -58,7 +58,7 @@ If ingestion fails (e.g. missing files), the pipeline short-circuits directly to
 Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions. Reads the plain-text submission and parses the rubric JSON. Extracts `student_id` from the submission text using a regex pattern (`Student ID: <value>`). Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### PDF Ingestion Agent (`agents/pdf_ingestion.py`)
-Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, then calls the LLM to extract `student_id`, `student_name`, and the cleaned `submission_text` (excluding cover-page boilerplate). Falls back to the raw Markdown text if LLM extraction fails. Sets `ingestion_status` to `"success"` or `"failed"`.
+Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, and always passes that full Markdown to downstream scoring/reporting. The light LLM is used only for extracting student metadata (`student_id`, `student_name`) from a compact metadata-focused prompt. Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### Analysis Agent (`agents/analysis.py`)
 Calls `phi4-mini` via LangChain/Ollama to score each rubric criterion. LLM output is structured using a Pydantic schema (`RubricScores`). Scores are clamped to `[0, max_score]` and the total is computed deterministically by `calculate_total_score` — the LLM is never trusted for arithmetic.
@@ -399,4 +399,3 @@ Make sure the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/clou
 
 **Database not initialised**
 Run `make init-db` before the first grading run to create `data/students.db`.
-
