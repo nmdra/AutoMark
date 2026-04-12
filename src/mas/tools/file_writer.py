@@ -139,6 +139,13 @@ def write_marking_sheet(
     str
         The resolved absolute path of the written file.
     """
+    def _escape_markdown_table_cell(value: Any) -> str:
+        """Normalize a value for safe insertion into a Markdown table cell."""
+        text = str(value)
+        text = " ".join(text.splitlines())
+        text = " ".join(text.split())
+        return text.replace("|", "\\|")
+
     lines: list[str] = [
         "# Marking Sheet",
         "",
@@ -157,11 +164,16 @@ def write_marking_sheet(
     ]
 
     for c in scored_criteria:
-        justification = c.get("justification", "").replace("|", "\\|")
+        criterion_name = _escape_markdown_table_cell(
+            c.get("name", c.get("criterion_id", ""))
+        )
+        score = _escape_markdown_table_cell(c.get("score", 0))
+        max_score = _escape_markdown_table_cell(c.get("max_score", 0))
+        justification = _escape_markdown_table_cell(c.get("justification", ""))
         lines.append(
-            f"| {c.get('name', c.get('criterion_id', ''))} "
-            f"| {c.get('score', 0)} "
-            f"| {c.get('max_score', 0)} "
+            f"| {criterion_name} "
+            f"| {score} "
+            f"| {max_score} "
             f"| {justification} |"
         )
 
@@ -172,7 +184,12 @@ def write_marking_sheet(
         "",
         f"| Total Score | Max Marks | Percentage | Grade |",
         f"|-------------|-----------|------------|-------|",
-        f"| {total_score} | {total_marks} | {percentage:.2f}% | {grade} |",
+        (
+            f"| {_escape_markdown_table_cell(total_score)} "
+            f"| {_escape_markdown_table_cell(total_marks)} "
+            f"| {_escape_markdown_table_cell(f'{percentage:.2f}%')} "
+            f"| {_escape_markdown_table_cell(grade)} |"
+        ),
     ]
 
     content = "\n".join(lines) + "\n"
