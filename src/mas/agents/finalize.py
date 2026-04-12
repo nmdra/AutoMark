@@ -250,6 +250,8 @@ def finalize_agent(state: AgentState) -> dict:
             continue
         if all(line.startswith("**") and ":**" in line for line in lines):
             continue
+        if all(set(line) <= {"-", "*", "_"} and len(line) >= 3 for line in lines):
+            continue
         summary = paragraph
         break
     if not summary and paragraphs:

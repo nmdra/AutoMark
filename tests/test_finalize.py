@@ -207,6 +207,23 @@ class TestFinalizeAgent:
         # Summary should be a non-empty string (first real paragraph).
         assert isinstance(result["summary"], str)
 
+    @patch("mas.agents.finalize.get_prose_llm")
+    def test_summary_skips_horizontal_rules(self, mock_get_prose_llm, tmp_path):
+        mock_prose = MagicMock()
+        mock_prose.invoke.return_value = MagicMock(
+            content="# Feedback Report\n\n---\n\nThis is the real summary."
+        )
+        mock_get_prose_llm.return_value = mock_prose
+
+        state = _make_state(
+            str(tmp_path / "students.db"),
+            output_path=str(tmp_path / "report.md"),
+        )
+        result = finalize_agent(state)
+
+        assert result["summary"] == "This is the real summary."
+        assert result["summary"] != "---"
+
     def test_analysis_report_written(self, tmp_path):
         db = str(tmp_path / "students.db")
         analysis_path = str(tmp_path / "analysis.md")

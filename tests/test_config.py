@@ -73,6 +73,10 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.min_reports_for_insights == 1
 
+    def test_default_pdf_regex_fast_path_enabled(self):
+        s = _reload_settings({})
+        assert s.pdf_regex_fast_path_enabled is True
+
     def test_default_db_path_contains_data_directory(self):
         s = _reload_settings({})
         assert "data" in s.db_path
@@ -158,6 +162,10 @@ class TestSettingsEnvOverrides:
         s = _reload_settings({"AUTOMARK_MIN_REPORTS_FOR_INSIGHTS": "2"})
         assert s.min_reports_for_insights == 2
 
+    def test_pdf_regex_fast_path_enabled_false(self):
+        s = _reload_settings({"AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED": "false"})
+        assert s.pdf_regex_fast_path_enabled is False
+
     def test_empty_env_var_falls_back_to_default(self):
         s = _reload_settings({"AUTOMARK_ANALYSIS_MODEL_NAME": ""})
         assert s.analysis_model_name == "phi4-mini:3.8b-q4_K_M"
@@ -211,5 +219,6 @@ class TestModuleSingleton:
             "llm_report_enabled",
             "submission_max_chars",
             "min_reports_for_insights",
+            "pdf_regex_fast_path_enabled",
         ):
             assert hasattr(settings, field)
