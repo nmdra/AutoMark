@@ -29,11 +29,14 @@ from mas.config import settings
 from mas.graph import build_graph
 from mas.state import AgentState
 
+# Project root: three levels up from src/mas/api.py → src/mas → src → project root
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 # Allowed base directory for submission and rubric files.
 # Defaults to the project data directory; override with AUTOMARK_DATA_BASE_DIR.
 _DATA_BASE_DIR: Path = Path(
     os.environ.get("AUTOMARK_DATA_BASE_DIR", "")
-    or Path(__file__).parent.parent.parent / "data"
+    or _PROJECT_ROOT / "data"
 ).resolve()
 
 # Output directory for grading results (per-session files are created here).
