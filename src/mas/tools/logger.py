@@ -38,10 +38,13 @@ def log_agent_action(
     with _LOG_FILE.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry) + "\n")
 
-    print(
-        f"[{entry['timestamp']}] [{agent.upper()}] {action}",
-        file=sys.stdout,
-        flush=True,
-    )
+    try:
+        print(
+            f"[{entry['timestamp']}] [{agent.upper()}] {action}",
+            file=sys.stdout,
+            flush=True,
+        )
+    except BrokenPipeError:
+        pass
 
     return entry
