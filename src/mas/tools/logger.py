@@ -14,7 +14,11 @@ from mas.config import settings
 
 _LOG_FILE = Path(settings.log_file)
 _JSON_RENDERER = structlog.processors.JSONRenderer()
-_CONSOLE_RENDERER = structlog.dev.ConsoleRenderer(colors=False)
+_CONSOLE_RENDERER = structlog.dev.ConsoleRenderer(
+    colors=True,
+    pad_event=30,
+    sort_keys=False,
+)
 
 
 def _as_int(value: Any) -> int | None:
@@ -70,14 +74,25 @@ def _emit_entry(entry: dict[str, Any]) -> None:
         fh.write(rendered_json + "\n")
 
     try:
-        descriptor = str(entry.get("action") or entry.get("task_type") or "")
-        console_event = {
-            "event": (
-                f"{entry['event_type']}:{entry['status']} {descriptor}".strip()
-            ),
-            "service": entry.get("service"),
-            "session_id": entry.get("session_id"),
+        console_event: dict[str, Any] = {
+            "event": f"{entry.get('event_type', 'event')}:{entry.get('status', 'unknown')}"
         }
+        for key in (
+            "service",
+            "session_id",
+            "agent",
+            "action",
+            "task_type",
+            "model",
+            "latency_ms",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "error",
+        ):
+            value = entry.get(key)
+            if value not in (None, ""):
+                console_event[key] = value
         print(
             _CONSOLE_RENDERER(None, "info", console_event),
             file=sys.stdout,
