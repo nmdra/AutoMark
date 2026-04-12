@@ -165,9 +165,21 @@ def report_agent(state: AgentState) -> dict:
     existing_logs: list = list(state.get("agent_logs") or [])
     existing_logs.append(log_entry)
 
-    # Extract summary: first non-empty paragraph of the report
+    # Extract summary: first real prose paragraph of the report
     paragraphs = [p.strip() for p in report_text.split("\n\n") if p.strip()]
-    summary = paragraphs[0] if paragraphs else ""
+    summary = ""
+    for paragraph in paragraphs:
+        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        if not lines:
+            continue
+        if lines[0].startswith("#"):
+            continue
+        if all(line.startswith("**") and ":**" in line for line in lines):
+            continue
+        summary = paragraph
+        break
+    if not summary and paragraphs:
+        summary = paragraphs[0]
 
     return {
         "final_report": report_text,
