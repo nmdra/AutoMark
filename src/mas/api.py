@@ -35,6 +35,9 @@ _DATA_BASE_DIR: Path = Path(
     or Path(settings.submission_path).parent
 ).resolve()
 
+# Output directory for grading results (per-session files are created here).
+_OUTPUT_DIR: Path = Path(settings.output_path).parent.resolve()
+
 # ── Pydantic models ────────────────────────────────────────────────────────────
 
 
@@ -98,25 +101,37 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Build the graph once at startup and reuse it across all requests.
+_graph = build_graph()
+
 
 # ── Path validation helper ─────────────────────────────────────────────────────
 
 
 def _resolve_safe_path(raw: str) -> Path:
-    """Resolve *raw* to an absolute path and verify it stays within *_DATA_BASE_DIR*.
+    """Join *raw* (treated as a relative filename) with *_DATA_BASE_DIR* and resolve.
 
-    Raises ``HTTPException(422)`` when the resolved path escapes the allowed
-    base directory (path-traversal protection).
+    Only relative paths are accepted.  The resolved path is checked against
+    *_DATA_BASE_DIR* to prevent path-traversal attacks.  Raises
+    ``HTTPException(422)`` for absolute paths or traversal attempts.
     """
-    resolved = Path(raw).resolve()
+    if Path(raw).is_absolute():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Absolute paths are not accepted. "
+                f"Supply a filename relative to the data directory."
+            ),
+        )
+    resolved = (_DATA_BASE_DIR / raw).resolve()
     try:
         resolved.relative_to(_DATA_BASE_DIR)
     except ValueError:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Path '{raw}' is outside the allowed data directory "
-                f"({_DATA_BASE_DIR}). Supply a path inside the data folder."
+                f"Path '{raw}' escapes the allowed data directory. "
+                f"Supply a filename inside the data folder."
             ),
         )
     return resolved
@@ -156,18 +171,23 @@ def grade(request: GradeRequest) -> GradeResponse:
 
     session_id = str(uuid.uuid4())
 
+    # Generate session-specific output paths to prevent concurrent-request conflicts.
+    _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    session_output = str(_OUTPUT_DIR / f"feedback_report_{session_id}.md")
+    session_marking = str(_OUTPUT_DIR / f"marking_sheet_{session_id}.md")
+
     initial_state: AgentState = {
         "submission_path": str(submission),
         "rubric_path": str(rubric),
         "db_path": settings.db_path,
-        "output_filepath": settings.output_path,
+        "output_filepath": session_output,
+        "marking_sheet_path": session_marking,
         "session_id": session_id,
         "agent_logs": [],
     }
 
     try:
-        graph = build_graph()
-        final_state: AgentState = graph.invoke(initial_state)
+        final_state: AgentState = _graph.invoke(initial_state)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -267,4 +287,5 @@ if __name__ == "__main__":
 
     # Bind to localhost only for local development.
     # Use `uvicorn mas.api:app --host 0.0.0.0` (or the Docker CMD) for network access.
-    uvicorn.run("mas.api:app", host="127.0.0.1", port=8000, reload=True)
+    _port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("mas.api:app", host="127.0.0.1", port=_port, reload=True)
