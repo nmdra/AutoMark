@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctse_mas.agents.analysis import CriterionScore, RubricScores, analysis_agent
-from ctse_mas.state import AgentState
+from mas.agents.analysis import CriterionScore, RubricScores, analysis_agent
+from mas.state import AgentState
 
 SAMPLE_RUBRIC = {
     "module": "CTSE",
@@ -51,7 +51,7 @@ def _mock_llm_output() -> RubricScores:
 
 
 class TestAnalysisAgent:
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_scores_returned_correctly(self, mock_get_llm):
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = _mock_llm_output()
@@ -63,7 +63,7 @@ class TestAnalysisAgent:
         assert result["grade"] == "C"  # 70%
         assert len(result["scored_criteria"]) == 2
 
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_score_clamped_to_max(self, mock_get_llm):
         """Scores above max_score must be clamped."""
         mock_llm = MagicMock()
@@ -80,7 +80,7 @@ class TestAnalysisAgent:
         c1 = next(c for c in result["scored_criteria"] if c["criterion_id"] == "C1")
         assert c1["score"] == 5  # clamped to max_score
 
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_score_clamped_to_zero(self, mock_get_llm):
         """Negative scores must be clamped to 0."""
         mock_llm = MagicMock()
@@ -97,7 +97,7 @@ class TestAnalysisAgent:
         c1 = next(c for c in result["scored_criteria"] if c["criterion_id"] == "C1")
         assert c1["score"] == 0
 
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_llm_failure_defaults_to_zero(self, mock_get_llm):
         """When the LLM raises an exception, all scores fall back to 0."""
         mock_llm = MagicMock()
@@ -110,7 +110,7 @@ class TestAnalysisAgent:
         assert result["grade"] == "F"
         assert "error" in result
 
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_total_score_is_not_calculated_by_llm(self, mock_get_llm):
         """Total score must be deterministic – not from the LLM response."""
         mock_llm = MagicMock()
@@ -122,7 +122,7 @@ class TestAnalysisAgent:
         # 4 + 3 = 7  (deterministic, not provided by mock)
         assert result["total_score"] == 7
 
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_log_entry_appended(self, mock_get_llm):
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = _mock_llm_output()
@@ -133,7 +133,7 @@ class TestAnalysisAgent:
         assert len(result["agent_logs"]) == 1
         assert result["agent_logs"][0]["agent"] == "analysis"
 
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_grade_a(self, mock_get_llm):
         """Score ≥ 90% should yield grade A."""
         mock_llm = MagicMock()
@@ -150,7 +150,7 @@ class TestAnalysisAgent:
         assert result["grade"] == "A"
         assert result["total_score"] == 10
 
-    @patch("ctse_mas.agents.analysis.get_json_llm")
+    @patch("mas.agents.analysis.get_json_llm")
     def test_returns_only_changed_fields(self, mock_get_llm):
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = _mock_llm_output()

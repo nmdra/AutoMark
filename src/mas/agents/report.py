@@ -7,10 +7,10 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ctse_mas.llm import get_prose_llm
-from ctse_mas.state import AgentState
-from ctse_mas.tools.file_writer import write_feedback_report
-from ctse_mas.tools.logger import log_agent_action
+from mas.llm import get_prose_llm
+from mas.state import AgentState
+from mas.tools.file_writer import write_feedback_report
+from mas.tools.logger import log_agent_action
 
 _DEFAULT_OUTPUT = "output/feedback_report.md"
 

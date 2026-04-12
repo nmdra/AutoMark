@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ctse_mas.agents.report import report_agent
-from ctse_mas.state import AgentState
+from mas.agents.report import report_agent
+from mas.state import AgentState
 
 SAMPLE_RUBRIC = {
     "module": "CTSE",
@@ -53,7 +53,7 @@ def _make_state(output_path: str = "", **kwargs) -> AgentState:
 
 
 class TestReportAgent:
-    @patch("ctse_mas.agents.report.get_prose_llm")
+    @patch("mas.agents.report.get_prose_llm")
     def test_report_written_to_disk(self, mock_get_llm, tmp_path):
         output = str(tmp_path / "out" / "report.md")
         mock_llm = MagicMock()
@@ -65,7 +65,7 @@ class TestReportAgent:
         assert Path(output).exists()
         assert result["final_report"] == "# Feedback Report\n\nGood job."
 
-    @patch("ctse_mas.agents.report.get_prose_llm")
+    @patch("mas.agents.report.get_prose_llm")
     def test_output_filepath_in_result(self, mock_get_llm, tmp_path):
         output = str(tmp_path / "report.md")
         mock_llm = MagicMock()
@@ -77,7 +77,7 @@ class TestReportAgent:
         assert "output_filepath" in result
         assert result["output_filepath"] == str(Path(output).resolve())
 
-    @patch("ctse_mas.agents.report.get_prose_llm")
+    @patch("mas.agents.report.get_prose_llm")
     def test_parent_dirs_created(self, mock_get_llm, tmp_path):
         deep_path = str(tmp_path / "a" / "b" / "c" / "report.md")
         mock_llm = MagicMock()
@@ -88,7 +88,7 @@ class TestReportAgent:
 
         assert Path(deep_path).exists()
 
-    @patch("ctse_mas.agents.report.get_prose_llm")
+    @patch("mas.agents.report.get_prose_llm")
     def test_fallback_report_when_llm_fails(self, mock_get_llm, tmp_path):
         output = str(tmp_path / "report.md")
         mock_llm = MagicMock()
@@ -100,7 +100,7 @@ class TestReportAgent:
         assert Path(output).exists()
         assert len(result["final_report"]) > 0
 
-    @patch("ctse_mas.agents.report.get_prose_llm")
+    @patch("mas.agents.report.get_prose_llm")
     def test_overwrite_existing_file(self, mock_get_llm, tmp_path):
         output = tmp_path / "report.md"
         output.write_text("old content", encoding="utf-8")
@@ -112,7 +112,7 @@ class TestReportAgent:
 
         assert output.read_text(encoding="utf-8") == "new content"
 
-    @patch("ctse_mas.agents.report.get_prose_llm")
+    @patch("mas.agents.report.get_prose_llm")
     def test_log_entry_appended(self, mock_get_llm, tmp_path):
         output = str(tmp_path / "report.md")
         mock_llm = MagicMock()
@@ -125,7 +125,7 @@ class TestReportAgent:
         assert result["agent_logs"][0]["agent"] == "report"
         assert result["agent_logs"][0]["action"] == "write_feedback_report"
 
-    @patch("ctse_mas.agents.report.get_prose_llm")
+    @patch("mas.agents.report.get_prose_llm")
     def test_returns_only_changed_fields(self, mock_get_llm, tmp_path):
         output = str(tmp_path / "report.md")
         mock_llm = MagicMock()

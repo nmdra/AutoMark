@@ -12,11 +12,11 @@ from pathlib import Path
 
 from langgraph.graph import END, StateGraph
 
-from ctse_mas.agents.analysis import analysis_agent
-from ctse_mas.agents.historical import historical_agent
-from ctse_mas.agents.ingestion import ingestion_agent
-from ctse_mas.agents.report import report_agent
-from ctse_mas.state import AgentState
+from mas.agents.analysis import analysis_agent
+from mas.agents.historical import historical_agent
+from mas.agents.ingestion import ingestion_agent
+from mas.agents.report import report_agent
+from mas.state import AgentState
 
 
 # ── Routing function ──────────────────────────────────────────────────────────
