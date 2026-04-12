@@ -1,0 +1,40 @@
+Cloud Technology and Systems Engineering (CTSE) – Assignment Submission
+
+Student Name: Jane Smith
+Student ID: IT21000001
+Module: CTSE – IT4080
+Date: 2025-04-10
+
+--- Answer ---
+
+Question 1: What is containerisation and what are its key benefits?
+
+Containerisation is a lightweight form of operating-system-level virtualisation that
+packages an application together with all its dependencies, libraries, and configuration
+files into a single portable unit called a container. Unlike traditional virtual machines,
+containers share the host operating system kernel, which makes them considerably more
+efficient in terms of resource consumption and start-up time.
+
+Key benefits include:
+1. Portability – A container runs identically across development, staging, and production
+   environments, eliminating the classic "it works on my machine" problem.
+2. Isolation – Each container runs in its own namespace, preventing dependency conflicts
+   between applications on the same host.
+3. Scalability – Container orchestration platforms such as Kubernetes enable automatic
+   horizontal scaling based on demand.
+4. Resource Efficiency – Containers share the host kernel and require no full OS per
+   instance, reducing memory and CPU overhead compared to VMs.
+5. Faster CI/CD – Container images can be built once and promoted through pipeline stages
+   without re-building, speeding up delivery pipelines.
+
+Question 2: Explain the role of Kubernetes in modern DevOps practices.
+
+Kubernetes is an open-source container orchestration system originally developed by Google.
+It automates the deployment, scaling, and management of containerised applications across
+clusters of nodes. In modern DevOps, Kubernetes plays a central role by providing:
+
+- Declarative configuration via YAML manifests, enabling Infrastructure-as-Code workflows.
+- Self-healing capabilities through health checks and automatic pod restarts.
+- Rolling updates and rollback mechanisms that minimise downtime during releases.
+- Service discovery and load balancing built into the platform.
+- Integration with cloud providers (EKS, GKE, AKS) for managed cluster operations.
