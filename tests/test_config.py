@@ -49,6 +49,14 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.output_path.endswith("feedback_report.md")
 
+    def test_default_analysis_report_path_ends_with_analysis_report_md(self):
+        s = _reload_settings({})
+        assert s.analysis_report_path.endswith("analysis_report.md")
+
+    def test_default_marking_sheet_path_ends_with_marking_sheet_md(self):
+        s = _reload_settings({})
+        assert s.marking_sheet_path.endswith("marking_sheet.md")
+
     def test_default_db_path_contains_data_directory(self):
         s = _reload_settings({})
         assert "data" in s.db_path
@@ -92,6 +100,14 @@ class TestSettingsEnvOverrides:
     def test_output_path_override(self):
         s = _reload_settings({"AUTOMARK_OUTPUT_PATH": "/tmp/report.md"})
         assert s.output_path == "/tmp/report.md"
+
+    def test_analysis_report_path_override(self):
+        s = _reload_settings({"AUTOMARK_ANALYSIS_REPORT_PATH": "/tmp/analysis.md"})
+        assert s.analysis_report_path == "/tmp/analysis.md"
+
+    def test_marking_sheet_path_override(self):
+        s = _reload_settings({"AUTOMARK_MARKING_SHEET_PATH": "/tmp/sheet.md"})
+        assert s.marking_sheet_path == "/tmp/sheet.md"
 
     def test_empty_env_var_falls_back_to_default(self):
         s = _reload_settings({"AUTOMARK_MODEL_NAME": ""})
@@ -140,5 +156,7 @@ class TestModuleSingleton:
             "submission_path",
             "rubric_path",
             "output_path",
+            "analysis_report_path",
+            "marking_sheet_path",
         ):
             assert hasattr(settings, field)

@@ -32,6 +32,14 @@ AUTOMARK_RUBRIC_PATH
 AUTOMARK_OUTPUT_PATH
     Default output path for the generated Markdown feedback report.
     Default: ``<project_root>/output/feedback_report.md``
+
+AUTOMARK_ANALYSIS_REPORT_PATH
+    Default output path for the performance analysis report.
+    Default: ``<project_root>/output/analysis_report.md``
+
+AUTOMARK_MARKING_SHEET_PATH
+    Default output path for the marking sheet report.
+    Default: ``<project_root>/output/marking_sheet.md``
 """
 
 from __future__ import annotations
@@ -65,6 +73,8 @@ class Settings:
     submission_path: str
     rubric_path: str
     output_path: str
+    analysis_report_path: str
+    marking_sheet_path: str
 
 
 def _load_settings() -> Settings:
@@ -80,6 +90,14 @@ def _load_settings() -> Settings:
         rubric_path=_env("AUTOMARK_RUBRIC_PATH", str(root / "data" / "rubric.json")),
         output_path=_env(
             "AUTOMARK_OUTPUT_PATH", str(root / "output" / "feedback_report.md")
+        ),
+        analysis_report_path=_env(
+            "AUTOMARK_ANALYSIS_REPORT_PATH",
+            str(root / "output" / "analysis_report.md"),
+        ),
+        marking_sheet_path=_env(
+            "AUTOMARK_MARKING_SHEET_PATH",
+            str(root / "output" / "marking_sheet.md"),
         ),
     )
 

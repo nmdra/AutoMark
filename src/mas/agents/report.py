@@ -7,9 +7,10 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from mas.config import settings
 from mas.llm import get_prose_llm
 from mas.state import AgentState
-from mas.tools.file_writer import write_feedback_report
+from mas.tools.file_writer import write_feedback_report, write_marking_sheet
 from mas.tools.logger import log_agent_action
 
 _DEFAULT_OUTPUT = "output/feedback_report.md"
@@ -91,12 +92,18 @@ def _build_fallback_report(state: AgentState) -> str:
 def report_agent(state: AgentState) -> dict:
     """Generate a Markdown feedback report and write it to disk.
 
-    Uses the prose LLM to produce a well-formatted report.  Falls back to a
-    template-based report when the LLM is unavailable.  Returns only the
-    fields it changes.
+    Also produces a separate marking sheet report.  Uses the prose LLM to
+    produce a well-formatted feedback report.  Falls back to a template-based
+    report when the LLM is unavailable.  Returns only the fields it changes.
     """
     session_id: str = state.get("session_id", "")
     output_path: str = state.get("output_filepath") or _DEFAULT_OUTPUT
+    marking_sheet_output: str = (
+        state.get("marking_sheet_path") or settings.marking_sheet_path
+    )
+
+    rubric_data: dict[str, Any] = state.get("rubric_data", {})
+    total_marks: int = int(rubric_data.get("total_marks", 0))
 
     inputs = {
         "total_score": state.get("total_score"),
@@ -122,11 +129,28 @@ def report_agent(state: AgentState) -> dict:
     except Exception:
         report_text = _build_fallback_report(state)
 
-    # Write report to disk
+    # Write feedback report to disk
     resolved_path = write_feedback_report(report_text, output_path)
+
+    # Write separate marking sheet
+    try:
+        resolved_marking_path = write_marking_sheet(
+            student_id=state.get("student_id", ""),
+            student_name=state.get("student_name", ""),
+            module=rubric_data.get("module", "Unknown Module"),
+            assignment=rubric_data.get("assignment", "Unknown Assignment"),
+            scored_criteria=state.get("scored_criteria", []),
+            total_score=state.get("total_score", 0),
+            total_marks=total_marks,
+            grade=state.get("grade", "N/A"),
+            output_path=marking_sheet_output,
+        )
+    except Exception:  # noqa: BLE001
+        resolved_marking_path = ""
 
     outputs = {
         "output_filepath": resolved_path,
+        "marking_sheet_path": resolved_marking_path,
         "report_length": len(report_text),
     }
 
@@ -144,5 +168,6 @@ def report_agent(state: AgentState) -> dict:
     return {
         "final_report": report_text,
         "output_filepath": resolved_path,
+        "marking_sheet_path": resolved_marking_path,
         "agent_logs": existing_logs,
     }

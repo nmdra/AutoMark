@@ -10,8 +10,13 @@ from unittest.mock import patch
 import pytest
 
 from mas.tools.file_ops import read_json_file, read_text_file, validate_submission_files
-from mas.tools.file_writer import write_feedback_report
+from mas.tools.file_writer import (
+    write_analysis_report,
+    write_feedback_report,
+    write_marking_sheet,
+)
 from mas.tools.logger import log_agent_action
+from mas.tools.pdf_processor import convert_pdf_to_markdown
 from mas.tools.score_calculator import calculate_total_score
 
 
@@ -361,3 +366,206 @@ class TestLogAgentAction:
             )
         # Should parse without error
         datetime.fromisoformat(entry["timestamp"])
+
+    def test_prints_to_stdout(self, tmp_path, capsys):
+        log_file = tmp_path / "trace.log"
+        with patch("mas.tools.logger._LOG_FILE", log_file):
+            log_agent_action(
+                session_id="s1",
+                agent="analysis",
+                action="score_criteria",
+                inputs={},
+                outputs={},
+            )
+        captured = capsys.readouterr()
+        assert "analysis" in captured.out.lower()
+        assert "score_criteria" in captured.out.lower()
+
+
+# ── write_analysis_report ─────────────────────────────────────────────────────
+
+
+class TestWriteAnalysisReport:
+    _PAST = [
+        {"session_id": "s1", "timestamp": "2025-01-01T00:00:00+00:00", "total_score": 15, "grade": "B"},
+        {"session_id": "s2", "timestamp": "2025-02-01T00:00:00+00:00", "total_score": 18, "grade": "A"},
+    ]
+
+    def test_creates_file(self, tmp_path):
+        dest = tmp_path / "analysis.md"
+        write_analysis_report(self._PAST, "Improving.", "S001", str(dest))
+        assert dest.exists()
+
+    def test_returns_resolved_path(self, tmp_path):
+        dest = tmp_path / "analysis.md"
+        returned = write_analysis_report(self._PAST, "Improving.", "S001", str(dest))
+        assert returned == str(dest.resolve())
+
+    def test_contains_student_id(self, tmp_path):
+        dest = tmp_path / "analysis.md"
+        write_analysis_report(self._PAST, "", "IT21000001", str(dest))
+        content = dest.read_text(encoding="utf-8")
+        assert "IT21000001" in content
+
+    def test_contains_historical_scores(self, tmp_path):
+        dest = tmp_path / "analysis.md"
+        write_analysis_report(self._PAST, "", "S001", str(dest))
+        content = dest.read_text(encoding="utf-8")
+        assert "15" in content
+        assert "18" in content
+
+    def test_contains_progression_insights(self, tmp_path):
+        dest = tmp_path / "analysis.md"
+        write_analysis_report(self._PAST, "Student is improving.", "S001", str(dest))
+        content = dest.read_text(encoding="utf-8")
+        assert "Student is improving." in content
+
+    def test_no_history_shows_placeholder(self, tmp_path):
+        dest = tmp_path / "analysis.md"
+        write_analysis_report([], "", "S001", str(dest))
+        content = dest.read_text(encoding="utf-8")
+        assert "No historical records" in content
+
+    def test_no_insights_section_omitted(self, tmp_path):
+        dest = tmp_path / "analysis.md"
+        write_analysis_report(self._PAST, "", "S001", str(dest))
+        content = dest.read_text(encoding="utf-8")
+        assert "Progression Insights" not in content
+
+    def test_creates_parent_directories(self, tmp_path):
+        dest = tmp_path / "a" / "b" / "analysis.md"
+        write_analysis_report([], "", "S001", str(dest))
+        assert dest.exists()
+
+
+# ── write_marking_sheet ───────────────────────────────────────────────────────
+
+
+class TestWriteMarkingSheet:
+    _CRITERIA = [
+        {"name": "Accuracy", "criterion_id": "C1", "score": 4, "max_score": 5,
+         "justification": "Good definition."},
+        {"name": "Clarity", "criterion_id": "C2", "score": 3, "max_score": 5,
+         "justification": "Mostly clear."},
+    ]
+
+    def _write(self, tmp_path, **kwargs):
+        defaults = dict(
+            student_id="S001",
+            student_name="Alice",
+            module="CTSE",
+            assignment="Cloud Basics",
+            scored_criteria=self._CRITERIA,
+            total_score=7,
+            total_marks=10,
+            grade="C",
+            output_path=str(tmp_path / "sheet.md"),
+        )
+        defaults.update(kwargs)
+        return write_marking_sheet(**defaults)
+
+    def test_creates_file(self, tmp_path):
+        dest = tmp_path / "sheet.md"
+        write_marking_sheet(
+            student_id="S001", student_name="Alice", module="CTSE",
+            assignment="Cloud", scored_criteria=self._CRITERIA,
+            total_score=7, total_marks=10, grade="C", output_path=str(dest),
+        )
+        assert dest.exists()
+
+    def test_returns_resolved_path(self, tmp_path):
+        dest = tmp_path / "sheet.md"
+        returned = write_marking_sheet(
+            student_id="S001", student_name="", module="CTSE",
+            assignment="Cloud", scored_criteria=self._CRITERIA,
+            total_score=7, total_marks=10, grade="C", output_path=str(dest),
+        )
+        assert returned == str(dest.resolve())
+
+    def test_contains_student_id(self, tmp_path):
+        path = self._write(tmp_path)
+        content = Path(path).read_text(encoding="utf-8")
+        assert "S001" in content
+
+    def test_contains_student_name(self, tmp_path):
+        path = self._write(tmp_path)
+        content = Path(path).read_text(encoding="utf-8")
+        assert "Alice" in content
+
+    def test_name_omitted_when_empty(self, tmp_path):
+        dest = tmp_path / "sheet.md"
+        write_marking_sheet(
+            student_id="S001", student_name="", module="CTSE",
+            assignment="Cloud", scored_criteria=self._CRITERIA,
+            total_score=7, total_marks=10, grade="C", output_path=str(dest),
+        )
+        content = dest.read_text(encoding="utf-8")
+        assert "Student Name" not in content
+
+    def test_contains_criterion_scores(self, tmp_path):
+        path = self._write(tmp_path)
+        content = Path(path).read_text(encoding="utf-8")
+        assert "Accuracy" in content
+        assert "Clarity" in content
+
+    def test_contains_grade(self, tmp_path):
+        path = self._write(tmp_path)
+        content = Path(path).read_text(encoding="utf-8")
+        assert "C" in content
+
+    def test_contains_percentage(self, tmp_path):
+        path = self._write(tmp_path)
+        content = Path(path).read_text(encoding="utf-8")
+        assert "70.00%" in content
+
+    def test_creates_parent_directories(self, tmp_path):
+        dest = tmp_path / "deep" / "sheet.md"
+        write_marking_sheet(
+            student_id="S001", student_name="", module="CTSE",
+            assignment="Cloud", scored_criteria=[], total_score=0,
+            total_marks=10, grade="F", output_path=str(dest),
+        )
+        assert dest.exists()
+
+
+# ── pdf_processor ─────────────────────────────────────────────────────────────
+
+
+class TestConvertPdfToMarkdown:
+    def test_missing_file_raises_file_not_found(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="PDF file not found"):
+            convert_pdf_to_markdown(str(tmp_path / "missing.pdf"))
+
+    def test_non_pdf_extension_raises_value_error(self, tmp_path):
+        txt = tmp_path / "doc.txt"
+        txt.write_text("content", encoding="utf-8")
+        with pytest.raises(ValueError, match=r"Expected a \.pdf file"):
+            convert_pdf_to_markdown(str(txt))
+
+    def test_successful_conversion(self, tmp_path):
+        import pymupdf  # type: ignore[import]
+
+        pdf_path = tmp_path / "test.pdf"
+        doc = pymupdf.open()
+        page = doc.new_page()
+        page.insert_text((50, 100), "Student ID: IT21000001\nHello World")
+        doc.save(str(pdf_path))
+        doc.close()
+
+        result = convert_pdf_to_markdown(str(pdf_path))
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_conversion_contains_text(self, tmp_path):
+        import pymupdf  # type: ignore[import]
+
+        pdf_path = tmp_path / "test.pdf"
+        doc = pymupdf.open()
+        page = doc.new_page()
+        page.insert_text((50, 100), "Student ID: IT21000001")
+        doc.save(str(pdf_path))
+        doc.close()
+
+        result = convert_pdf_to_markdown(str(pdf_path))
+        assert "IT21000001" in result
+
