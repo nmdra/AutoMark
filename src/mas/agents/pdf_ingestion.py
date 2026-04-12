@@ -73,6 +73,7 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
     ingestion_status = "failed"
     error = ""
     markdown_text = ""
+    stage1_ok = False
 
     # --- Stage 1: Validate paths and convert PDF → Markdown ---
     try:
@@ -93,11 +94,12 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
 
         markdown_text = convert_pdf_to_markdown(submission_path)
         rubric_data = read_json_file(rubric_path)
+        stage1_ok = True
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
 
     # --- Stage 2: LLM extraction of student details (gracefully degradable) ---
-    if markdown_text:
+    if stage1_ok:
         try:
             llm = get_json_llm(schema=StudentDetails)
             messages = [
