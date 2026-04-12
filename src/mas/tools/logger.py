@@ -16,7 +16,7 @@ _LOG_FILE = Path(settings.log_file)
 _JSON_RENDERER = structlog.processors.JSONRenderer()
 _CONSOLE_RENDERER = structlog.dev.ConsoleRenderer(
     colors=True,
-    pad_event=30,
+    pad_event_to=30,
     sort_keys=False,
 )
 
