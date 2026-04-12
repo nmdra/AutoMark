@@ -33,7 +33,7 @@ from mas.state import AgentState
 # Defaults to the project data directory; override with AUTOMARK_DATA_BASE_DIR.
 _DATA_BASE_DIR: Path = Path(
     os.environ.get("AUTOMARK_DATA_BASE_DIR", "")
-    or Path(settings.submission_path).parent
+    or Path(__file__).parent.parent.parent / "data"
 ).resolve()
 
 # Output directory for grading results (per-session files are created here).

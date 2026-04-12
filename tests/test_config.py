@@ -37,14 +37,6 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.log_file == "agent_trace.log"
 
-    def test_default_submission_path_ends_with_submission_txt(self):
-        s = _reload_settings({})
-        assert s.submission_path.endswith("submission.txt")
-
-    def test_default_rubric_path_ends_with_rubric_json(self):
-        s = _reload_settings({})
-        assert s.rubric_path.endswith("rubric.json")
-
     def test_default_output_path_ends_with_feedback_report_md(self):
         s = _reload_settings({})
         assert s.output_path.endswith("feedback_report.md")
@@ -64,8 +56,6 @@ class TestSettingsDefaults:
     def test_default_paths_are_absolute(self):
         s = _reload_settings({})
         assert Path(s.db_path).is_absolute()
-        assert Path(s.submission_path).is_absolute()
-        assert Path(s.rubric_path).is_absolute()
         assert Path(s.output_path).is_absolute()
 
 
@@ -88,14 +78,6 @@ class TestSettingsEnvOverrides:
     def test_log_file_override(self):
         s = _reload_settings({"AUTOMARK_LOG_FILE": "/var/log/automark.log"})
         assert s.log_file == "/var/log/automark.log"
-
-    def test_submission_path_override(self):
-        s = _reload_settings({"AUTOMARK_SUBMISSION_PATH": "/tmp/sub.txt"})
-        assert s.submission_path == "/tmp/sub.txt"
-
-    def test_rubric_path_override(self):
-        s = _reload_settings({"AUTOMARK_RUBRIC_PATH": "/tmp/rubric.json"})
-        assert s.rubric_path == "/tmp/rubric.json"
 
     def test_output_path_override(self):
         s = _reload_settings({"AUTOMARK_OUTPUT_PATH": "/tmp/report.md"})
@@ -153,8 +135,6 @@ class TestModuleSingleton:
             "ollama_base_url",
             "db_path",
             "log_file",
-            "submission_path",
-            "rubric_path",
             "output_path",
             "analysis_report_path",
             "marking_sheet_path",
