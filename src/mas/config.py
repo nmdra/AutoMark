@@ -48,8 +48,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Project root: three levels up from src/mas/config.py
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# Load .env from the project root (no-op when the file is absent)
+load_dotenv(_PROJECT_ROOT / ".env")
 
 
 def _env(key: str, default: str) -> str:
