@@ -19,6 +19,7 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +30,14 @@ from mas.config import settings
 from mas.graph import build_graph
 from mas.state import AgentState
 
+# Project root: three levels up from src/mas/api.py → src/mas → src → project root
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 # Allowed base directory for submission and rubric files.
 # Defaults to the project data directory; override with AUTOMARK_DATA_BASE_DIR.
 _DATA_BASE_DIR: Path = Path(
     os.environ.get("AUTOMARK_DATA_BASE_DIR", "")
-    or Path(settings.submission_path).parent
+    or _PROJECT_ROOT / "data"
 ).resolve()
 
 # Output directory for grading results (per-session files are created here).
@@ -70,10 +74,13 @@ class GradeResponse(BaseModel):
     student_id: str
     student_name: str
     total_score: float
+    percentage: float
     grade: str
+    summary: str
     criteria: list[CriterionResult]
     feedback_report: str
     output_filepath: str
+    marking_sheet_path: str
 
 
 class HealthResponse(BaseModel):
@@ -186,7 +193,7 @@ def grade(request: GradeRequest) -> GradeResponse:
 
     session_id = str(uuid.uuid4())
 
-    # Generate session-specific output paths to prevent concurrent-request conflicts.
+    # Use session-scoped temp paths; files are renamed with student info after the run.
     _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     session_output = str(_OUTPUT_DIR / f"feedback_report_{session_id}.md")
     session_marking = str(_OUTPUT_DIR / f"marking_sheet_{session_id}.md")
@@ -215,6 +222,60 @@ def grade(request: GradeRequest) -> GradeResponse:
             detail=f"Pipeline error: {final_state['error']}",
         )
 
+    student_id = final_state.get("student_id") or ""
+    student_name = final_state.get("student_name") or ""
+
+    # Rename output files to include timestamp, student name, and student ID.
+    # Microseconds in the timestamp make collisions (same student, same second) essentially
+    # impossible. A counter suffix handles the theoretical residual case.
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", student_name) if student_name else "unknown"
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", student_id) if student_id else "unknown"
+    file_stem = f"{timestamp}_{safe_name}_{safe_id}"
+
+    def _unique_path(directory: Path, stem: str, suffix: str) -> Path:
+        """Return *directory / stem + suffix*, appending a counter if the path exists."""
+        candidate = directory / f"{stem}{suffix}"
+        counter = 1
+        while candidate.exists():
+            candidate = directory / f"{stem}_{counter}{suffix}"
+            counter += 1
+        return candidate
+
+    final_output = str(_unique_path(_OUTPUT_DIR, f"{file_stem}_feedback_report", ".md"))
+    final_marking = str(_unique_path(_OUTPUT_DIR, f"{file_stem}_marking_sheet", ".md"))
+
+    def _replace_path_references(value: Any, old_path: str, new_path: str) -> Any:
+        if not old_path or old_path == new_path:
+            return value
+        if isinstance(value, dict):
+            return {
+                key: _replace_path_references(item, old_path, new_path)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [_replace_path_references(item, old_path, new_path) for item in value]
+        if isinstance(value, str) and value == old_path:
+            return new_path
+        return value
+
+    current_output = final_state.get("output_filepath") or ""
+    current_marking = final_state.get("marking_sheet_path") or ""
+
+    if current_output and Path(current_output).exists():
+        Path(current_output).rename(final_output)
+        final_state = _replace_path_references(final_state, current_output, final_output)
+        final_state["output_filepath"] = final_output
+    else:
+        final_output = current_output
+
+    if current_marking and Path(current_marking).exists():
+        Path(current_marking).rename(final_marking)
+        final_state = _replace_path_references(final_state, current_marking, final_marking)
+        final_state["marking_sheet_path"] = final_marking
+    else:
+        final_marking = current_marking
+
     criteria: list[CriterionResult] = [
         CriterionResult(
             criterion_id=c["criterion_id"],
@@ -228,13 +289,16 @@ def grade(request: GradeRequest) -> GradeResponse:
 
     return GradeResponse(
         session_id=session_id,
-        student_id=final_state.get("student_id") or "",
-        student_name=final_state.get("student_name") or "",
+        student_id=student_id,
+        student_name=student_name,
         total_score=final_state.get("total_score") or 0.0,
+        percentage=final_state.get("percentage") or 0.0,
         grade=final_state.get("grade") or "N/A",
+        summary=final_state.get("summary") or "",
         criteria=criteria,
         feedback_report=final_state.get("final_report") or "",
-        output_filepath=final_state.get("output_filepath") or "",
+        output_filepath=final_output,
+        marking_sheet_path=final_marking,
     )
 
 

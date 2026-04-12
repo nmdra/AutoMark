@@ -21,14 +21,6 @@ AUTOMARK_LOG_FILE
     Path to the structured JSON agent trace log.
     Default: ``agent_trace.log``  (relative to the working directory)
 
-AUTOMARK_SUBMISSION_PATH
-    Default path to the student submission text file used by the CLI.
-    Default: ``<project_root>/data/submission.txt``
-
-AUTOMARK_RUBRIC_PATH
-    Default path to the grading rubric JSON file used by the CLI.
-    Default: ``<project_root>/data/rubric.json``
-
 AUTOMARK_OUTPUT_PATH
     Default output path for the generated Markdown feedback report.
     Default: ``<project_root>/output/feedback_report.md``
@@ -74,9 +66,7 @@ class Settings:
     db_path: str
     log_file: str
 
-    # ── Default data paths (used by the CLI entry point) ──────────────────────
-    submission_path: str
-    rubric_path: str
+    # ── Default output paths ──────────────────────────────────────────────────
     output_path: str
     analysis_report_path: str
     marking_sheet_path: str
@@ -89,10 +79,6 @@ def _load_settings() -> Settings:
         ollama_base_url=_env("AUTOMARK_OLLAMA_BASE_URL", "http://localhost:11434"),
         db_path=_env("AUTOMARK_DB_PATH", str(root / "data" / "students.db")),
         log_file=_env("AUTOMARK_LOG_FILE", "agent_trace.log"),
-        submission_path=_env(
-            "AUTOMARK_SUBMISSION_PATH", str(root / "data" / "submission.txt")
-        ),
-        rubric_path=_env("AUTOMARK_RUBRIC_PATH", str(root / "data" / "rubric.json")),
         output_path=_env(
             "AUTOMARK_OUTPUT_PATH", str(root / "output" / "feedback_report.md")
         ),

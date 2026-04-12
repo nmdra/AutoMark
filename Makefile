@@ -1,4 +1,4 @@
-.PHONY: start stop run test logs clean pull-model init-db api
+.PHONY: start stop test logs clean pull-model init-db api
 
 # Start Ollama with CPU profile (default)
 start:
@@ -15,10 +15,6 @@ stop:
 # Pull the required model
 pull-model:
 	docker exec ctse-ollama ollama pull phi4-mini:3.8b-q4_0
-
-# Run the auto-grader pipeline
-run:
-	uv run python -m mas.graph
 
 # Run the test suite
 test:

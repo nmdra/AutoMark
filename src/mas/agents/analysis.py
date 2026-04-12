@@ -131,6 +131,7 @@ def analysis_agent(state: AgentState) -> dict:
     updates: dict = {
         "scored_criteria": scored_criteria,
         "total_score": totals["total_score"],
+        "percentage": totals["percentage"],
         "grade": totals["grade"],
         "agent_logs": existing_logs,
     }

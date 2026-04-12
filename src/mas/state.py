@@ -22,6 +22,7 @@ class AgentState(TypedDict, total=False):
     # ── Analysis ───────────────────────────────────────────────────────────
     scored_criteria: list[dict[str, Any]]
     total_score: float
+    percentage: float
     grade: str
 
     # ── Historical ─────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ class AgentState(TypedDict, total=False):
 
     # ── Report ─────────────────────────────────────────────────────────────
     final_report: str
+    summary: str                         # brief plain-text overview for API responses
     output_filepath: str
     marking_sheet_path: str              # path to written marking sheet
 
