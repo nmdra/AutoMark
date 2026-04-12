@@ -172,9 +172,14 @@ def report_agent(state: AgentState) -> dict:
         lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
         if not lines:
             continue
+        # Skip headings
         if lines[0].startswith("#"):
             continue
+        # Skip bold key-value metadata lines
         if all(line.startswith("**") and ":**" in line for line in lines):
+            continue
+        # Skip markdown horizontal rules (e.g. ---, ***, ___)
+        if all(set(line) <= {"-", "*", "_"} and len(line) >= 3 for line in lines):
             continue
         summary = paragraph
         break
