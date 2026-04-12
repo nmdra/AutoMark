@@ -12,8 +12,7 @@ from langchain_ollama import ChatOllama
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
-_MODEL = "phi4-mini:3.8b-q4_K_M"
-_BASE_URL = "http://localhost:11434"
+from mas.config import settings
 
 
 def get_json_llm(schema: type[Any] | None = None) -> ChatOllama:
@@ -27,8 +26,8 @@ def get_json_llm(schema: type[Any] | None = None) -> ChatOllama:
         leveraging Ollama's token-sampling ``format`` parameter.
     """
     kwargs: dict[str, Any] = {
-        "model": _MODEL,
-        "base_url": _BASE_URL,
+        "model": settings.model_name,
+        "base_url": settings.ollama_base_url,
         "temperature": 0.0,
         "format": "json",
     }
@@ -44,7 +43,7 @@ def get_prose_llm() -> ChatOllama:
     Intended *exclusively* for the Report Agent.
     """
     return ChatOllama(
-        model=_MODEL,
-        base_url=_BASE_URL,
+        model=settings.model_name,
+        base_url=settings.ollama_base_url,
         temperature=0.3,
     )

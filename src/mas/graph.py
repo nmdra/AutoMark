@@ -8,14 +8,13 @@ Pipeline flow:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from langgraph.graph import END, StateGraph
 
 from mas.agents.analysis import analysis_agent
 from mas.agents.historical import historical_agent
 from mas.agents.ingestion import ingestion_agent
 from mas.agents.report import report_agent
+from mas.config import settings
 from mas.state import AgentState
 
 
@@ -64,16 +63,11 @@ def build_graph() -> StateGraph:
 
 def main() -> None:
     """Run the auto-grader pipeline with default data files."""
-    base = Path(__file__).parent.parent.parent  # project root
-    submission_path = str(base / "data" / "submission.txt")
-    rubric_path = str(base / "data" / "rubric.json")
-    db_path = str(base / "data" / "students.db")
-
     initial_state: AgentState = {
-        "submission_path": submission_path,
-        "rubric_path": rubric_path,
-        "db_path": db_path,
-        "output_filepath": str(base / "output" / "feedback_report.md"),
+        "submission_path": settings.submission_path,
+        "rubric_path": settings.rubric_path,
+        "db_path": settings.db_path,
+        "output_filepath": settings.output_path,
         "agent_logs": [],
     }
 
