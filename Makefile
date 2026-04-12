@@ -1,4 +1,4 @@
-.PHONY: start stop run test logs clean pull-model init-db
+.PHONY: start stop run test logs clean pull-model init-db api
 
 # Start Ollama with CPU profile (default)
 start:
@@ -31,6 +31,18 @@ logs:
 # Initialise the SQLite student database
 init-db:
 	uv run python -c "from mas.tools.db_manager import init_db; init_db('data/students.db'); print('Database initialised at data/students.db')"
+
+# Start the FastAPI development server (connects to Ollama at localhost:11434)
+api:
+	uv run uvicorn mas.api:app --host 0.0.0.0 --port 8000 --reload
+
+# Build and start the full Docker stack (Ollama + API)
+docker-up:
+	docker compose up --build -d
+
+# Stop the full Docker stack
+docker-down:
+	docker compose down
 
 # Remove containers, volumes and cached outputs
 clean:

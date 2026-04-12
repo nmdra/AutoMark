@@ -8,5 +8,23 @@ services:
       - ~/.ollama:/root/.ollama
     restart: unless-stopped
 
+  automark-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: automark-api
+    ports:
+      - "8000:8000"
+    environment:
+      - AUTOMARK_OLLAMA_BASE_URL=http://ollama:11434
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
 volumes:
   ollama_data:
