@@ -32,7 +32,7 @@ from mas.tools.file_writer import (
     write_feedback_report,
     write_marking_sheet,
 )
-from mas.tools.logger import log_agent_action
+from mas.tools.logger import log_agent_action, timed_model_call
 
 # Import prompt builders and helpers from the original agent modules so that
 # those modules remain independently testable.
@@ -50,6 +50,7 @@ def _task_generate_insights(
     past_reports: list[dict[str, Any]],
     total_score: float,
     grade: str,
+    session_id: str = "",
 ) -> str:
     """Call the LLM to produce progression-trend insights.
 
@@ -68,13 +69,20 @@ def _task_generate_insights(
             ),
             HumanMessage(content=prompt),
         ]
-        response = llm.invoke(messages)
+        response = timed_model_call(
+            llm=llm,
+            messages=messages,
+            session_id=session_id,
+            service="finalize",
+            task_type="progression_insights",
+            model=settings.light_model_name,
+        )
         return response.content
     except Exception:  # noqa: BLE001
         return ""
 
 
-def _task_generate_report_prose(state: AgentState) -> str:
+def _task_generate_report_prose(state: AgentState, session_id: str = "") -> str:
     """Call the LLM (or use the template fallback) to produce the feedback report.
 
     Note: ``progression_insights`` is intentionally absent from the prompt here
@@ -95,7 +103,14 @@ def _task_generate_report_prose(state: AgentState) -> str:
             ),
             HumanMessage(content=prompt),
         ]
-        response = llm.invoke(messages)
+        response = timed_model_call(
+            llm=llm,
+            messages=messages,
+            session_id=session_id,
+            service="finalize",
+            task_type="feedback_report_generation",
+            model=settings.analysis_model_name,
+        )
         return response.content
     except Exception:  # noqa: BLE001
         return _build_fallback_report(state)
@@ -188,11 +203,13 @@ def finalize_agent(state: AgentState) -> dict:
                 past_reports,
                 total_score,
                 grade,
+                session_id,
             )
 
         report_future: Future[str] = executor.submit(
             _task_generate_report_prose,
             state_with_context,
+            session_id,
         )
 
         # Collect results (blocking until both threads complete)

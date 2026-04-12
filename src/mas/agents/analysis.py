@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from mas.llm import get_json_llm
 from mas.state import AgentState
-from mas.tools.logger import log_agent_action
+from mas.tools.logger import log_agent_action, timed_model_call
 from mas.tools.score_calculator import calculate_total_score
 from mas.config import settings
 
@@ -79,7 +79,14 @@ def analysis_agent(state: AgentState) -> dict:
     ]
 
     try:
-        result: RubricScores = llm.invoke(messages)
+        result: RubricScores = timed_model_call(
+            llm=llm,
+            messages=messages,
+            session_id=session_id,
+            service="analysis",
+            task_type="rubric_scoring",
+            model=settings.analysis_model_name,
+        )
         llm_scores: list[CriterionScore] = result.scores
     except Exception as exc:
         # Fallback: assign 0 for all criteria

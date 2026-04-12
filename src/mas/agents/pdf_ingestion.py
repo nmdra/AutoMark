@@ -14,7 +14,7 @@ from mas.config import settings
 from mas.llm import get_light_json_llm
 from mas.state import AgentState
 from mas.tools.file_ops import read_json_file
-from mas.tools.logger import log_agent_action
+from mas.tools.logger import log_agent_action, timed_model_call
 from mas.tools.pdf_processor import convert_pdf_to_markdown
 
 # ── Regex patterns reused from the text ingestion path ────────────────────────
@@ -202,7 +202,14 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
                     ),
                     HumanMessage(content=_build_extraction_prompt(metadata_context)),
                 ]
-                result: StudentDetails = llm.invoke(messages)
+                result: StudentDetails = timed_model_call(
+                    llm=llm,
+                    messages=messages,
+                    session_id=session_id,
+                    service="pdf_ingestion",
+                    task_type="student_details_extraction",
+                    model=settings.light_model_name,
+                )
                 student_id = (result.student_id or regex_id).strip()
                 student_name = (result.student_name or regex_name).strip()
             except Exception as exc:  # noqa: BLE001

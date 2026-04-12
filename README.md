@@ -81,7 +81,7 @@ Calls `phi4-mini` to generate a well-formatted Markdown feedback report and a ma
 | `tools/file_writer.py` | `write_feedback_report` | Writes feedback report to disk, creating parent directories as needed |
 | `tools/file_writer.py` | `write_analysis_report` | Writes the performance analysis report to disk |
 | `tools/score_calculator.py` | `calculate_total_score` | Sums criterion scores, computes percentage, assigns a letter grade |
-| `tools/logger.py` | `log_agent_action` | Appends a JSON trace entry to `agent_trace.log` |
+| `tools/logger.py` | `log_agent_action`, `log_model_call`, `timed_model_call` | Emits structured logs via `structlog` (JSON file + console output) |
 | `tools/db_manager.py` | `init_db` | Initialises the SQLite student results database |
 | `tools/db_manager.py` | `save_report` | Persists a grading result for a student |
 | `tools/db_manager.py` | `get_past_reports` | Retrieves all previous grading results for a student |
@@ -379,7 +379,7 @@ After a successful run, the following files are written to the `output/` directo
 | `*_marking_sheet.md` | Compact marking sheet suitable for sharing with the student |
 | `*_analysis_report.md` | Historical performance analysis with progression insights |
 
-An append-only JSON trace log is written to `agent_trace.log` in the project root on every run.
+An append-only structured JSON trace log (via `structlog`) is written to `agent_trace.log` in the project root on every run.
 
 ---
 
