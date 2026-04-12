@@ -72,9 +72,10 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
     rubric_data: dict[str, Any] = {}
     ingestion_status = "failed"
     error = ""
+    markdown_text = ""
 
+    # --- Stage 1: Validate paths and convert PDF → Markdown ---
     try:
-        # --- Validate paths ---
         if not submission_path:
             raise ValueError("submission_path must not be empty")
         if not rubric_path:
@@ -90,43 +91,36 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
         if pdf_path.stat().st_size == 0:
             raise ValueError(f"PDF submission file is empty: {submission_path}")
 
-        # --- Convert PDF → Markdown ---
         markdown_text = convert_pdf_to_markdown(submission_path)
-
-        # --- LLM extraction of student details ---
-        llm = get_json_llm(schema=StudentDetails)
-        messages = [
-            SystemMessage(
-                content=(
-                    "You are a data extraction assistant. "
-                    "Extract student details from the provided PDF text. "
-                    "Respond ONLY with valid JSON matching the required schema."
-                )
-            ),
-            HumanMessage(content=_build_extraction_prompt(markdown_text)),
-        ]
-        result: StudentDetails = llm.invoke(messages)
-        student_id = result.student_id
-        student_name = result.student_name
-        submission_text = result.submission_text or markdown_text
-
-        # --- Read rubric ---
         rubric_data = read_json_file(rubric_path)
-        ingestion_status = "success"
-
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
-    except Exception as exc:  # noqa: BLE001
-        # LLM extraction failure – fall back to raw markdown as submission text
-        if submission_text == "" and "markdown_text" in dir():
-            submission_text = locals().get("markdown_text", "")
-        if rubric_data == {} and rubric_path:
-            try:
-                rubric_data = read_json_file(rubric_path)
-                ingestion_status = "success"
-            except Exception:  # noqa: BLE001
-                pass
-        error = str(exc)
+
+    # --- Stage 2: LLM extraction of student details (gracefully degradable) ---
+    if markdown_text:
+        try:
+            llm = get_json_llm(schema=StudentDetails)
+            messages = [
+                SystemMessage(
+                    content=(
+                        "You are a data extraction assistant. "
+                        "Extract student details from the provided PDF text. "
+                        "Respond ONLY with valid JSON matching the required schema."
+                    )
+                ),
+                HumanMessage(content=_build_extraction_prompt(markdown_text)),
+            ]
+            result: StudentDetails = llm.invoke(messages)
+            student_id = result.student_id
+            student_name = result.student_name
+            submission_text = result.submission_text or markdown_text
+        except Exception as exc:  # noqa: BLE001
+            # Fall back to raw Markdown when LLM extraction fails
+            submission_text = markdown_text
+            error = str(exc)
+
+        if rubric_data:
+            ingestion_status = "success"
 
     outputs = {
         "ingestion_status": ingestion_status,
