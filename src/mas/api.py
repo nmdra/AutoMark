@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -45,10 +46,10 @@ class GradeRequest(BaseModel):
     """Request body for POST /grade."""
 
     submission_path: str = Field(
-        description="Absolute or relative path to the student submission file (.txt or .pdf)."
+        description="Relative path to the student submission file (.txt or .pdf), relative to the server data directory."
     )
     rubric_path: str = Field(
-        description="Absolute or relative path to the grading rubric JSON file."
+        description="Relative path to the grading rubric JSON file, relative to the server data directory."
     )
 
 
@@ -102,7 +103,15 @@ app = FastAPI(
 )
 
 # Build the graph once at startup and reuse it across all requests.
+# LangGraph's CompiledStateGraph.invoke() creates a fresh state machine per
+# call and does not share mutable state between invocations, so this is safe
+# for concurrent requests.
 _graph = build_graph()
+
+# Allowlist pattern: relative paths with alphanumerics, dots, hyphens,
+# underscores, and forward slashes only.  Blocks traversal sequences and
+# shell-special characters before the path ever touches the filesystem.
+_SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9._/\- ]+$")
 
 
 # ── Path validation helper ─────────────────────────────────────────────────────
@@ -111,19 +120,26 @@ _graph = build_graph()
 def _resolve_safe_path(raw: str) -> Path:
     """Join *raw* (treated as a relative filename) with *_DATA_BASE_DIR* and resolve.
 
-    Only relative paths are accepted.  The resolved path is checked against
-    *_DATA_BASE_DIR* to prevent path-traversal attacks.  Raises
-    ``HTTPException(422)`` for absolute paths or traversal attempts.
+    Only relative paths matching ``_SAFE_PATH_RE`` are accepted.  The resolved
+    path is also checked against *_DATA_BASE_DIR* to prevent path-traversal
+    attacks.  Raises ``HTTPException(422)`` for invalid or dangerous inputs.
     """
-    if Path(raw).is_absolute():
+    if not _SAFE_PATH_RE.match(raw):
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Absolute paths are not accepted. "
-                f"Supply a filename relative to the data directory."
+                "Path contains disallowed characters. "
+                "Supply a simple relative filename (letters, digits, dots, hyphens, underscores)."
             ),
         )
-    resolved = (_DATA_BASE_DIR / raw).resolve()
+    if ".." in Path(raw).parts:
+        raise HTTPException(
+            status_code=422,
+            detail="Path traversal sequences ('..') are not allowed.",
+        )
+    # Join with the trusted base directory — raw never reaches the FS alone.
+    safe_raw = re.sub(r"[^A-Za-z0-9._/\- ]", "", raw)
+    resolved = (_DATA_BASE_DIR / safe_raw).resolve()
     try:
         resolved.relative_to(_DATA_BASE_DIR)
     except ValueError:
