@@ -62,6 +62,7 @@ def historical_agent(state: AgentState) -> dict:
     }
 
     progression_insights = ""
+    all_reports: list[dict[str, Any]] = []
     past_reports: list[dict[str, Any]] = []
 
     try:
@@ -74,10 +75,11 @@ def historical_agent(state: AgentState) -> dict:
             total_score=total_score,
             grade=grade,
         )
-        past_reports = get_past_reports(db_path, student_id)
+        all_reports = get_past_reports(db_path, student_id)
         # Exclude the record we just saved (last entry) to get truly past reports
-        past_reports = past_reports[:-1]
+        past_reports = all_reports[:-1]
     except Exception as exc:  # noqa: BLE001
+        all_reports = []
         past_reports = []
         progression_insights = ""
         db_error = str(exc)
@@ -108,7 +110,7 @@ def historical_agent(state: AgentState) -> dict:
     analysis_report_path: str = state.get("analysis_report_path") or settings.analysis_report_path
     try:
         resolved_analysis_path = write_analysis_report(
-            past_reports=past_reports,
+            past_reports=all_reports,
             progression_insights=progression_insights,
             student_id=student_id,
             output_path=analysis_report_path,
