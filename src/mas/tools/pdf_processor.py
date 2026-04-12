@@ -30,13 +30,15 @@ def convert_pdf_to_markdown(pdf_path: str) -> str:
     FileNotFoundError
         If the PDF file does not exist.
     ValueError
-        If the path does not point to a ``.pdf`` file.
+        If the path is not a regular file or does not point to a ``.pdf`` file.
     RuntimeError
         Wraps any underlying conversion error from ``pymupdf4llm``.
     """
     path = Path(pdf_path)
     if not path.exists():
         raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+    if not path.is_file():
+        raise ValueError(f"Expected a regular PDF file, got non-file path: {pdf_path}")
     if path.suffix.lower() != ".pdf":
         raise ValueError(
             f"Expected a .pdf file, got: {path.suffix!r}"
