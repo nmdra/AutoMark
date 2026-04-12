@@ -16,6 +16,13 @@ def init_db(db_path: str) -> None:
 
     Safe to call multiple times – uses ``CREATE TABLE IF NOT EXISTS``.
 
+    Applies two one-time performance optimisations:
+
+    * **WAL journal mode** – allows concurrent readers during writes and
+      reduces fsync overhead compared to the default DELETE mode.
+    * **Index on ``student_id``** – eliminates full-table scans in
+      ``get_past_reports`` as the database grows.
+
     Parameters
     ----------
     db_path:
@@ -24,6 +31,7 @@ def init_db(db_path: str) -> None:
     """
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reports (
@@ -33,6 +41,12 @@ def init_db(db_path: str) -> None:
                 timestamp    TEXT    NOT NULL,
                 report_json  TEXT    NOT NULL
             )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_reports_student_id
+            ON reports (student_id)
             """
         )
         conn.commit()

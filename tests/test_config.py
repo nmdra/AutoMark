@@ -21,9 +21,13 @@ def _reload_settings(env: dict[str, str]):
 
 
 class TestSettingsDefaults:
-    def test_default_model_name(self):
+    def test_default_analysis_model_name(self):
         s = _reload_settings({})
-        assert s.model_name == "phi4-mini:3.8b-q4_K_M"
+        assert s.analysis_model_name == "phi4-mini:3.8b-q4_K_M"
+
+    def test_default_light_model_name(self):
+        s = _reload_settings({})
+        assert s.light_model_name == "gemma3:1b-it-q4_K_M"
 
     def test_default_ollama_base_url(self):
         s = _reload_settings({})
@@ -49,6 +53,26 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.marking_sheet_path.endswith("marking_sheet.md")
 
+    def test_default_num_ctx(self):
+        s = _reload_settings({})
+        assert s.num_ctx == 4096
+
+    def test_default_num_predict(self):
+        s = _reload_settings({})
+        assert s.num_predict == 512
+
+    def test_default_llm_report_enabled(self):
+        s = _reload_settings({})
+        assert s.llm_report_enabled is True
+
+    def test_default_submission_max_chars(self):
+        s = _reload_settings({})
+        assert s.submission_max_chars == 8000
+
+    def test_default_min_reports_for_insights(self):
+        s = _reload_settings({})
+        assert s.min_reports_for_insights == 1
+
     def test_default_db_path_contains_data_directory(self):
         s = _reload_settings({})
         assert "data" in s.db_path
@@ -63,9 +87,28 @@ class TestSettingsDefaults:
 
 
 class TestSettingsEnvOverrides:
-    def test_model_name_override(self):
+    def test_analysis_model_name_override(self):
+        s = _reload_settings({"AUTOMARK_ANALYSIS_MODEL_NAME": "phi4-mini:14b"})
+        assert s.analysis_model_name == "phi4-mini:14b"
+
+    def test_light_model_name_override(self):
+        s = _reload_settings({"AUTOMARK_LIGHT_MODEL_NAME": "gemma3:4b-it-q4_K_M"})
+        assert s.light_model_name == "gemma3:4b-it-q4_K_M"
+
+    def test_legacy_model_name_env_sets_analysis_model(self):
+        """AUTOMARK_MODEL_NAME (legacy) should set analysis_model_name when
+        AUTOMARK_ANALYSIS_MODEL_NAME is not provided."""
         s = _reload_settings({"AUTOMARK_MODEL_NAME": "llama3:8b"})
-        assert s.model_name == "llama3:8b"
+        assert s.analysis_model_name == "llama3:8b"
+
+    def test_analysis_model_name_takes_precedence_over_legacy(self):
+        s = _reload_settings(
+            {
+                "AUTOMARK_MODEL_NAME": "llama3:8b",
+                "AUTOMARK_ANALYSIS_MODEL_NAME": "phi4-mini:14b",
+            }
+        )
+        assert s.analysis_model_name == "phi4-mini:14b"
 
     def test_ollama_base_url_override(self):
         s = _reload_settings({"AUTOMARK_OLLAMA_BASE_URL": "http://ollama:11434"})
@@ -91,18 +134,42 @@ class TestSettingsEnvOverrides:
         s = _reload_settings({"AUTOMARK_MARKING_SHEET_PATH": "/tmp/sheet.md"})
         assert s.marking_sheet_path == "/tmp/sheet.md"
 
+    def test_num_ctx_override(self):
+        s = _reload_settings({"AUTOMARK_NUM_CTX": "2048"})
+        assert s.num_ctx == 2048
+
+    def test_num_predict_override(self):
+        s = _reload_settings({"AUTOMARK_NUM_PREDICT": "256"})
+        assert s.num_predict == 256
+
+    def test_llm_report_enabled_false(self):
+        s = _reload_settings({"AUTOMARK_LLM_REPORT_ENABLED": "false"})
+        assert s.llm_report_enabled is False
+
+    def test_llm_report_enabled_true_by_default(self):
+        s = _reload_settings({})
+        assert s.llm_report_enabled is True
+
+    def test_submission_max_chars_override(self):
+        s = _reload_settings({"AUTOMARK_SUBMISSION_MAX_CHARS": "4000"})
+        assert s.submission_max_chars == 4000
+
+    def test_min_reports_for_insights_override(self):
+        s = _reload_settings({"AUTOMARK_MIN_REPORTS_FOR_INSIGHTS": "2"})
+        assert s.min_reports_for_insights == 2
+
     def test_empty_env_var_falls_back_to_default(self):
-        s = _reload_settings({"AUTOMARK_MODEL_NAME": ""})
-        assert s.model_name == "phi4-mini:3.8b-q4_K_M"
+        s = _reload_settings({"AUTOMARK_ANALYSIS_MODEL_NAME": ""})
+        assert s.analysis_model_name == "phi4-mini:3.8b-q4_K_M"
 
     def test_multiple_overrides_applied_together(self):
         s = _reload_settings(
             {
-                "AUTOMARK_MODEL_NAME": "mistral:7b",
+                "AUTOMARK_ANALYSIS_MODEL_NAME": "mistral:7b",
                 "AUTOMARK_DB_PATH": "/data/prod.db",
             }
         )
-        assert s.model_name == "mistral:7b"
+        assert s.analysis_model_name == "mistral:7b"
         assert s.db_path == "/data/prod.db"
 
 
@@ -115,7 +182,7 @@ class TestSettingsImmutability:
 
         s = _reload_settings({})
         with pytest.raises((AttributeError, TypeError)):
-            s.model_name = "changed"  # type: ignore[misc]
+            s.analysis_model_name = "changed"  # type: ignore[misc]
 
 
 # ── module-level singleton ────────────────────────────────────────────────────
@@ -131,12 +198,18 @@ class TestModuleSingleton:
         from mas.config import settings
 
         for field in (
-            "model_name",
+            "analysis_model_name",
+            "light_model_name",
             "ollama_base_url",
             "db_path",
             "log_file",
             "output_path",
             "analysis_report_path",
             "marking_sheet_path",
+            "num_ctx",
+            "num_predict",
+            "llm_report_enabled",
+            "submission_max_chars",
+            "min_reports_for_insights",
         ):
             assert hasattr(settings, field)

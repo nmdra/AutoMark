@@ -3,11 +3,31 @@
 Settings are resolved once at import time.  Each value can be overridden by
 setting the corresponding environment variable before starting the process.
 
+Model selection
+---------------
+AutoMark uses two separate Ollama models to balance quality and speed:
+
+* **Analysis model** – used for computationally demanding tasks that require
+  deep reading comprehension and long-form generation (rubric scoring,
+  feedback-report prose).  Defaults to ``phi4-mini:3.8b-q4_K_M``.
+
+* **Light model** – used for lightweight queries where a smaller model is
+  sufficient: extracting student details from PDF text and generating short
+  progression-insight paragraphs.  Defaults to ``gemma3:1b-it-q4_K_M``.
+
 Environment variables
 ---------------------
-AUTOMARK_MODEL_NAME
-    Ollama model identifier used for all LLM calls.
+AUTOMARK_ANALYSIS_MODEL_NAME
+    Ollama model identifier for complex, analysis-focused tasks (rubric
+    scoring, feedback-report generation).
     Default: ``phi4-mini:3.8b-q4_K_M``
+    Legacy alias: ``AUTOMARK_MODEL_NAME`` (used when
+    ``AUTOMARK_ANALYSIS_MODEL_NAME`` is unset).
+
+AUTOMARK_LIGHT_MODEL_NAME
+    Ollama model identifier for lightweight queries (PDF extraction,
+    progression-insight summaries).
+    Default: ``gemma3:1b-it-q4_K_M``
 
 AUTOMARK_OLLAMA_BASE_URL
     Base URL for the Ollama HTTP API.
@@ -32,6 +52,39 @@ AUTOMARK_ANALYSIS_REPORT_PATH
 AUTOMARK_MARKING_SHEET_PATH
     Default output path for the marking sheet report.
     Default: ``<project_root>/output/marking_sheet.md``
+
+AUTOMARK_NUM_CTX
+    Ollama context window size (tokens).  Smaller values reduce KV-cache
+    allocation and speed up prefill; increase only when submissions are long.
+    Default: ``4096``
+
+AUTOMARK_NUM_PREDICT
+    Maximum number of tokens the model will generate per response.
+    Capping this prevents runaway generation latency.
+    Default: ``512``
+
+AUTOMARK_LLM_REPORT_ENABLED
+    Set to ``false`` (case-insensitive) to skip the prose-report LLM call and
+    use the deterministic template instead.  Eliminates one full LLM round-trip.
+    Default: ``true``
+
+AUTOMARK_SUBMISSION_MAX_CHARS
+    Maximum characters of submission text sent to the analysis LLM.
+    Longer text is truncated before the prompt is built, reducing context size.
+    Default: ``8000``
+
+AUTOMARK_MIN_REPORTS_FOR_INSIGHTS
+    Minimum number of *past* reports required before the historical-insights
+    LLM call is made.  Set to ``2`` to require at least two prior sessions
+    before generating trend commentary.
+    Default: ``1``
+
+Ollama parallel-request note
+-----------------------------
+The finalize agent runs the historical-insights LLM call (light model) and
+the feedback-report prose LLM call (analysis model) concurrently using a
+``ThreadPoolExecutor``.  To fully benefit from this, configure Ollama with
+``OLLAMA_NUM_PARALLEL >= 2`` on the Ollama server side.
 """
 
 from __future__ import annotations
@@ -59,7 +112,10 @@ class Settings:
     """Immutable application settings resolved from environment variables."""
 
     # ── LLM / Ollama ──────────────────────────────────────────────────────────
-    model_name: str
+    # Heavy model for analysis-focused tasks (rubric scoring, feedback reports)
+    analysis_model_name: str
+    # Lightweight model for simple extraction and short prose tasks
+    light_model_name: str
     ollama_base_url: str
 
     # ── Storage ───────────────────────────────────────────────────────────────
@@ -71,11 +127,26 @@ class Settings:
     analysis_report_path: str
     marking_sheet_path: str
 
+    # ── LLM performance knobs ─────────────────────────────────────────────────
+    num_ctx: int
+    num_predict: int
+    llm_report_enabled: bool
+    submission_max_chars: int
+    min_reports_for_insights: int
+
 
 def _load_settings() -> Settings:
     root = _PROJECT_ROOT
+    # Support legacy AUTOMARK_MODEL_NAME as a fallback for analysis_model_name
+    # so that existing deployments keep working without reconfiguration.
+    _default_analysis_model = _env("AUTOMARK_MODEL_NAME", "phi4-mini:3.8b-q4_K_M")
     return Settings(
-        model_name=_env("AUTOMARK_MODEL_NAME", "phi4-mini:3.8b-q4_K_M"),
+        analysis_model_name=_env(
+            "AUTOMARK_ANALYSIS_MODEL_NAME", _default_analysis_model
+        ),
+        light_model_name=_env(
+            "AUTOMARK_LIGHT_MODEL_NAME", "gemma3:1b-it-q4_K_M"
+        ),
         ollama_base_url=_env("AUTOMARK_OLLAMA_BASE_URL", "http://localhost:11434"),
         db_path=_env("AUTOMARK_DB_PATH", str(root / "data" / "students.db")),
         log_file=_env("AUTOMARK_LOG_FILE", "agent_trace.log"),
@@ -89,6 +160,15 @@ def _load_settings() -> Settings:
         marking_sheet_path=_env(
             "AUTOMARK_MARKING_SHEET_PATH",
             str(root / "output" / "marking_sheet.md"),
+        ),
+        num_ctx=int(_env("AUTOMARK_NUM_CTX", "4096")),
+        num_predict=int(_env("AUTOMARK_NUM_PREDICT", "512")),
+        llm_report_enabled=_env(
+            "AUTOMARK_LLM_REPORT_ENABLED", "true"
+        ).lower() not in ("false", "0", "no"),
+        submission_max_chars=int(_env("AUTOMARK_SUBMISSION_MAX_CHARS", "8000")),
+        min_reports_for_insights=int(
+            _env("AUTOMARK_MIN_REPORTS_FOR_INSIGHTS", "1")
         ),
     )
 

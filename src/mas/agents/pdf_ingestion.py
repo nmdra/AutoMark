@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -9,11 +10,23 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from mas.llm import get_json_llm
+from mas.llm import get_light_json_llm
 from mas.state import AgentState
 from mas.tools.file_ops import read_json_file
 from mas.tools.logger import log_agent_action
 from mas.tools.pdf_processor import convert_pdf_to_markdown
+
+# ── Regex patterns reused from the text ingestion path ────────────────────────
+
+# Matches "Student ID: <value>" or "ID: <value>" (case-insensitive)
+_STUDENT_ID_RE = re.compile(r"(?:student\s+)?id\s*:\s*(\S+)", re.IGNORECASE)
+
+# Matches "Student Name: <value>" or "Name: <value>" (case-insensitive)
+# Captures to end-of-line (strips trailing whitespace)
+_STUDENT_NAME_RE = re.compile(
+    r"(?:student\s+)?name\s*:\s*(.+?)(?:\s*$)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class StudentDetails(BaseModel):
@@ -28,6 +41,24 @@ class StudentDetails(BaseModel):
     submission_text: str = Field(
         description="The complete submission content, cleaned of cover-page boilerplate."
     )
+
+
+def _regex_extract_student_id(text: str) -> str:
+    """Extract student ID using a regex pattern.
+
+    Returns an empty string when no match is found.
+    """
+    match = _STUDENT_ID_RE.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def _regex_extract_student_name(text: str) -> str:
+    """Extract student name using a regex pattern.
+
+    Returns an empty string when no match is found.
+    """
+    match = _STUDENT_NAME_RE.search(text)
+    return match.group(1).strip() if match else ""
 
 
 def _build_extraction_prompt(markdown_text: str) -> str:
@@ -98,28 +129,43 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
 
-    # --- Stage 2: LLM extraction of student details (gracefully degradable) ---
+    # --- Stage 2: Regex extraction; fall back to LLM when regex is incomplete ---
     if stage1_ok:
-        try:
-            llm = get_json_llm(schema=StudentDetails)
-            messages = [
-                SystemMessage(
-                    content=(
-                        "You are a data extraction assistant. "
-                        "Extract student details from the provided PDF text. "
-                        "Respond ONLY with valid JSON matching the required schema."
-                    )
-                ),
-                HumanMessage(content=_build_extraction_prompt(markdown_text)),
-            ]
-            result: StudentDetails = llm.invoke(messages)
-            student_id = result.student_id
-            student_name = result.student_name
-            submission_text = result.submission_text or markdown_text
-        except Exception as exc:  # noqa: BLE001
-            # Fall back to raw Markdown when LLM extraction fails
+        # Fast path: try regex extraction first – no LLM call needed when both
+        # student_id and student_name are found deterministically.
+        regex_id = _regex_extract_student_id(markdown_text)
+        regex_name = _regex_extract_student_name(markdown_text)
+
+        if regex_id and regex_name:
+            # Both fields found by regex – skip the LLM call entirely.
+            student_id = regex_id
+            student_name = regex_name
             submission_text = markdown_text
-            error = str(exc)
+        else:
+            # At least one field is missing; invoke the LLM for comprehensive
+            # extraction and cover-page boilerplate removal.
+            try:
+                llm = get_light_json_llm(schema=StudentDetails)
+                messages = [
+                    SystemMessage(
+                        content=(
+                            "You are a data extraction assistant. "
+                            "Extract student details from the provided PDF text. "
+                            "Respond ONLY with valid JSON matching the required schema."
+                        )
+                    ),
+                    HumanMessage(content=_build_extraction_prompt(markdown_text)),
+                ]
+                result: StudentDetails = llm.invoke(messages)
+                student_id = result.student_id
+                student_name = result.student_name
+                submission_text = result.submission_text or markdown_text
+            except Exception as exc:  # noqa: BLE001
+                # Fall back to regex results (even if partial) + raw markdown.
+                student_id = regex_id
+                student_name = regex_name
+                submission_text = markdown_text
+                error = str(exc)
 
         if rubric_data:
             ingestion_status = "success"

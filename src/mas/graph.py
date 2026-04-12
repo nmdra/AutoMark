@@ -2,10 +2,14 @@
 
 Pipeline flow:
     _detect_submission_type
-        → ingestion (if .txt)     → (conditional) analysis → historical → report
-        → pdf_ingestion (if .pdf) → (conditional) analysis → historical → report
+        → ingestion (if .txt)     → (conditional) analysis → finalize
+        → pdf_ingestion (if .pdf) → (conditional) analysis → finalize
                                           ↓ (ingestion_status != 'success')
-                                        report  (graceful degradation)
+                                        finalize  (graceful degradation)
+
+The ``finalize`` node combines historical persistence and report generation,
+running the insights LLM and report-prose LLM concurrently via a
+``ThreadPoolExecutor`` to leverage Ollama's parallel request processing.
 """
 
 from __future__ import annotations
@@ -15,10 +19,9 @@ from pathlib import Path
 from langgraph.graph import END, StateGraph
 
 from mas.agents.analysis import analysis_agent
-from mas.agents.historical import historical_agent
+from mas.agents.finalize import finalize_agent
 from mas.agents.ingestion import ingestion_agent
 from mas.agents.pdf_ingestion import pdf_ingestion_agent
-from mas.agents.report import report_agent
 from mas.state import AgentState
 
 
@@ -33,10 +36,10 @@ def _route_submission_type(state: AgentState) -> str:
 
 
 def _route_after_ingestion(state: AgentState) -> str:
-    """Route to 'analysis' on success, or 'report' for graceful degradation."""
+    """Route to 'analysis' on success, or 'finalize' for graceful degradation."""
     if state.get("ingestion_status") == "success":
         return "analysis"
-    return "report"
+    return "finalize"
 
 
 # ── Graph builder ─────────────────────────────────────────────────────────────
@@ -49,8 +52,7 @@ def build_graph() -> StateGraph:
     builder.add_node("ingestion", ingestion_agent)
     builder.add_node("pdf_ingestion", pdf_ingestion_agent)
     builder.add_node("analysis", analysis_agent)
-    builder.add_node("historical", historical_agent)
-    builder.add_node("report", report_agent)
+    builder.add_node("finalize", finalize_agent)
 
     # Entry point: route based on submission file type
     builder.set_entry_point("_detect")
@@ -65,13 +67,13 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # Conditional edges: ingestion → analysis | report
+    # Conditional edges: ingestion → analysis | finalize
     builder.add_conditional_edges(
         "ingestion",
         _route_after_ingestion,
         {
             "analysis": "analysis",
-            "report": "report",
+            "finalize": "finalize",
         },
     )
 
@@ -80,12 +82,11 @@ def build_graph() -> StateGraph:
         _route_after_ingestion,
         {
             "analysis": "analysis",
-            "report": "report",
+            "finalize": "finalize",
         },
     )
 
-    builder.add_edge("analysis", "historical")
-    builder.add_edge("historical", "report")
-    builder.add_edge("report", END)
+    builder.add_edge("analysis", "finalize")
+    builder.add_edge("finalize", END)
 
     return builder.compile()

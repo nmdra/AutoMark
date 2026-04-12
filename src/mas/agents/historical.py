@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from mas.config import settings
-from mas.llm import get_prose_llm
+from mas.llm import get_light_prose_llm
 from mas.state import AgentState
 from mas.tools.db_manager import get_past_reports, save_report
 from mas.tools.file_writer import write_analysis_report
@@ -86,9 +86,9 @@ def historical_agent(state: AgentState) -> dict:
     else:
         db_error = ""
 
-    if past_reports:
+    if len(past_reports) >= settings.min_reports_for_insights:
         try:
-            llm = get_prose_llm()
+            llm = get_light_prose_llm()
             prompt = _build_insights_prompt(
                 student_id, past_reports, total_score, grade
             )
