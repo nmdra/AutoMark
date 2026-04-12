@@ -12,7 +12,7 @@ from langchain_ollama import ChatOllama
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
-_MODEL = "phi4-mini:3.8b-q4_0"
+_MODEL = "phi4-mini:3.8b-q4_K_M"
 _BASE_URL = "http://localhost:11434"
 
 
