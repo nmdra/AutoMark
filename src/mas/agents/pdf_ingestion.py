@@ -10,6 +10,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from mas.config import settings
 from mas.llm import get_light_json_llm
 from mas.state import AgentState
 from mas.tools.file_ops import read_json_file
@@ -58,7 +59,12 @@ def _regex_extract_student_name(text: str) -> str:
     Returns an empty string when no match is found.
     """
     match = _STUDENT_NAME_RE.search(text)
-    return match.group(1).strip() if match else ""
+    if not match:
+        return ""
+    name = match.group(1).strip()
+    name = re.sub(r"^\*+\s*", "", name)
+    name = re.sub(r"\s*\*+$", "", name)
+    return name.strip()
 
 
 def _build_extraction_prompt(markdown_text: str) -> str:
@@ -129,21 +135,23 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
 
-    # --- Stage 2: Regex extraction; fall back to LLM when regex is incomplete ---
+    # --- Stage 2: Optional regex fast-path; otherwise extract via LLM ---
     if stage1_ok:
-        # Fast path: try regex extraction first – no LLM call needed when both
-        # student_id and student_name are found deterministically.
-        regex_id = _regex_extract_student_id(markdown_text)
-        regex_name = _regex_extract_student_name(markdown_text)
+        regex_id = ""
+        regex_name = ""
+        if settings.pdf_regex_fast_path_enabled:
+            # Fast path: try regex extraction first – no LLM call needed when both
+            # student_id and student_name are found deterministically.
+            regex_id = _regex_extract_student_id(markdown_text)
+            regex_name = _regex_extract_student_name(markdown_text)
+            if regex_id and regex_name:
+                student_id = regex_id
+                student_name = regex_name
+                submission_text = markdown_text
 
-        if regex_id and regex_name:
-            # Both fields found by regex – skip the LLM call entirely.
-            student_id = regex_id
-            student_name = regex_name
-            submission_text = markdown_text
-        else:
-            # At least one field is missing; invoke the LLM for comprehensive
-            # extraction and cover-page boilerplate removal.
+        if not submission_text:
+            # Either regex is disabled, regex did not fully match, or fast-path
+            # extraction was intentionally bypassed; use the LLM extractor.
             try:
                 llm = get_light_json_llm(schema=StudentDetails)
                 messages = [
@@ -161,7 +169,7 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
                 student_name = result.student_name
                 submission_text = result.submission_text or markdown_text
             except Exception as exc:  # noqa: BLE001
-                # Fall back to regex results (even if partial) + raw markdown.
+                # Fall back to regex results (when available) + raw markdown.
                 student_id = regex_id
                 student_name = regex_name
                 submission_text = markdown_text

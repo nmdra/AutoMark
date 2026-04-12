@@ -98,6 +98,9 @@ class TestRegexExtractors:
         text = "Student ID: IT21000001\nStudent Name: Alice Smith\nContent"
         assert _regex_extract_student_name(text) == "Alice Smith"
 
+    def test_student_name_strips_leading_markdown_asterisks(self):
+        assert _regex_extract_student_name("Student Name: ** Jane Smith") == "Jane Smith"
+
 
 # ── pdf_ingestion_agent ───────────────────────────────────────────────────────
 
@@ -348,3 +351,28 @@ class TestPdfIngestionAgent:
 
         mock_llm.return_value.invoke.assert_called_once()
         assert result["student_name"] == "Bob Smith"
+
+    @patch("mas.agents.pdf_ingestion.settings")
+    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
+    def test_regex_fast_path_can_be_disabled_via_env_setting(
+        self, mock_convert, mock_llm, mock_settings, tmp_path
+    ):
+        """When regex fast-path is disabled, LLM runs even if regex could extract both."""
+        pdf = _fake_pdf(tmp_path)
+        rub = _write_rubric(tmp_path)
+        mock_settings.pdf_regex_fast_path_enabled = False
+        mock_convert.return_value = (
+            "Student ID: IT21000099\nStudent Name: Jane Doe\nContent here."
+        )
+        det = MagicMock()
+        det.student_id = "IT21000099"
+        det.student_name = "Jane Doe"
+        det.submission_text = "Content here."
+        mock_llm.return_value.invoke.return_value = det
+
+        result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
+
+        mock_llm.return_value.invoke.assert_called_once()
+        assert result["student_id"] == "IT21000099"
+        assert result["student_name"] == "Jane Doe"

@@ -79,6 +79,11 @@ AUTOMARK_MIN_REPORTS_FOR_INSIGHTS
     before generating trend commentary.
     Default: ``1``
 
+AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED
+    Set to ``false`` (case-insensitive) to skip regex-only extraction for PDF
+    student details and always use the model-based extractor.
+    Default: ``true``
+
 Ollama parallel-request note
 -----------------------------
 The finalize agent runs the historical-insights LLM call (light model) and
@@ -133,6 +138,7 @@ class Settings:
     llm_report_enabled: bool
     submission_max_chars: int
     min_reports_for_insights: int
+    pdf_regex_fast_path_enabled: bool
 
 
 def _load_settings() -> Settings:
@@ -170,6 +176,9 @@ def _load_settings() -> Settings:
         min_reports_for_insights=int(
             _env("AUTOMARK_MIN_REPORTS_FOR_INSIGHTS", "1")
         ),
+        pdf_regex_fast_path_enabled=_env(
+            "AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED", "true"
+        ).lower() not in ("false", "0", "no"),
     )
 
 
