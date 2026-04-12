@@ -1,8 +1,10 @@
-# ctse-mas
+# AutoMark
 
 **Student Assignment Auto-Grader Multi-Agent System**
 
-A local, privacy-preserving auto-grader built with [LangGraph](https://github.com/langchain-ai/langgraph) and [Ollama](https://ollama.com). It evaluates student submissions against a JSON rubric using a pipeline of specialised agents, producing a structured Markdown feedback report — entirely on your own hardware with no external API calls.
+A local, privacy-preserving auto-grader built with [LangGraph](https://github.com/langchain-ai/langgraph) and [Ollama](https://ollama.com). It evaluates student submissions (`.txt` or `.pdf`) against a JSON rubric using a pipeline of specialised agents, producing a structured Markdown feedback report and a marking sheet — entirely on your own hardware with no external API calls.
+
+A FastAPI REST wrapper exposes the pipeline as an HTTP service, making it easy to integrate with other tools or front-ends.
 
 ---
 
@@ -14,7 +16,10 @@ A local, privacy-preserving auto-grader built with [LangGraph](https://github.co
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Configuration](#configuration)
 - [Usage](#usage)
+  - [REST API](#rest-api)
+  - [Docker Stack](#docker-stack)
 - [Make Targets](#make-targets)
 - [Testing](#testing)
 - [Data Formats](#data-formats)
@@ -25,38 +30,44 @@ A local, privacy-preserving auto-grader built with [LangGraph](https://github.co
 
 ## Architecture
 
-The pipeline is a directed LangGraph `StateGraph` with one conditional edge:
+The pipeline is a directed LangGraph `StateGraph`. The entry point routes to the appropriate ingestion agent based on the submission file type, then proceeds through analysis, historical comparison, and report generation:
 
 ```
-coordinator ──► research ──► analysis ──► report ──► END
-                    │                       ▲
-                    └── (research failed) ──┘
+                     ┌── ingestion (txt) ──┐
+_detect ─────────────┤                     ├──► analysis ──► historical ──► report ──► END
+                     └── pdf_ingestion ────┘       │                           ▲
+                                                   └── (ingestion failed) ─────┘
 ```
 
 | Step | Agent | Responsibility |
 |---|---|---|
-| 1 | **Coordinator** | Validates file paths and extensions; assigns a session ID |
-| 2 | **Research** | Reads submission `.txt` and rubric `.json` into shared state |
+| 1 | **_detect** | Routes to the correct ingestion agent based on file extension |
+| 2a | **Ingestion** | Validates and reads `.txt` submissions; extracts `student_id` from text |
+| 2b | **PDF Ingestion** | Converts `.pdf` to Markdown via `pymupdf4llm`; uses the LLM to extract `student_id` and `student_name` |
 | 3 | **Analysis** | Scores each rubric criterion with the LLM; totals computed deterministically |
-| 4 | **Report** | Generates a Markdown feedback report via LLM; writes it to disk |
+| 4 | **Historical** | Persists results to SQLite; retrieves past reports; generates progression insights |
+| 5 | **Report** | Generates a Markdown feedback report and a marking sheet via LLM |
 
-If `research` fails (e.g. missing files), the pipeline short-circuits directly to `report`, which produces a minimal fallback report without scores.
+If ingestion fails (e.g. missing files), the pipeline short-circuits directly to `report`, which produces a minimal fallback report without scores.
 
 ---
 
 ## Agents
 
-### Coordinator Agent (`agents/coordinator.py`)
-Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions (`.txt` for submission, `.json` for rubric). Generates a UUID session ID if one is not provided.
+### Ingestion Agent (`agents/ingestion.py`)
+Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions. Reads the plain-text submission and parses the rubric JSON. Extracts `student_id` from the submission text using a regex pattern (`Student ID: <value>`). Sets `ingestion_status` to `"success"` or `"failed"`.
 
-### Research Agent (`agents/research.py`)
-Reads the plain-text submission and parses the JSON rubric into `AgentState`. Never scores or evaluates content.
+### PDF Ingestion Agent (`agents/pdf_ingestion.py`)
+Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, then calls the LLM to extract `student_id`, `student_name`, and the cleaned `submission_text` (excluding cover-page boilerplate). Falls back to the raw Markdown text if LLM extraction fails. Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### Analysis Agent (`agents/analysis.py`)
 Calls `phi4-mini` via LangChain/Ollama to score each rubric criterion. LLM output is structured using a Pydantic schema (`RubricScores`). Scores are clamped to `[0, max_score]` and the total is computed deterministically by `calculate_total_score` — the LLM is never trusted for arithmetic.
 
+### Historical Agent (`agents/historical.py`)
+Saves the current grading result to a SQLite database, retrieves all previous reports for the student, and uses the LLM to generate concise progression insights when past reports exist. Also writes a separate performance analysis report to disk.
+
 ### Report Agent (`agents/report.py`)
-Calls `phi4-mini` to generate a well-formatted Markdown feedback report. Falls back to a template-based report if the LLM is unavailable.
+Calls `phi4-mini` to generate a well-formatted Markdown feedback report and a marking sheet. Falls back to a template-based report if the LLM is unavailable.
 
 ---
 
@@ -64,12 +75,17 @@ Calls `phi4-mini` to generate a well-formatted Markdown feedback report. Falls b
 
 | Module | Function | Description |
 |---|---|---|
-| `tools/file_reader.py` | `read_text_file` | Reads a UTF-8 text file; wraps `OSError` as `RuntimeError` |
-| `tools/file_reader.py` | `read_json_file` | Reads and parses a JSON file; wraps `OSError`/`JSONDecodeError` |
-| `tools/file_validator.py` | `validate_submission_files` | Checks existence, size, and file extensions |
-| `tools/file_writer.py` | `write_feedback_report` | Writes report to disk, creating parent directories as needed |
+| `tools/file_ops.py` | `read_text_file` | Reads a UTF-8 text file; wraps `OSError` as `RuntimeError` |
+| `tools/file_ops.py` | `read_json_file` | Reads and parses a JSON file; wraps `OSError`/`JSONDecodeError` |
+| `tools/file_ops.py` | `validate_submission_files` | Checks existence, size, and file extensions |
+| `tools/file_writer.py` | `write_feedback_report` | Writes feedback report to disk, creating parent directories as needed |
+| `tools/file_writer.py` | `write_analysis_report` | Writes the performance analysis report to disk |
 | `tools/score_calculator.py` | `calculate_total_score` | Sums criterion scores, computes percentage, assigns a letter grade |
 | `tools/logger.py` | `log_agent_action` | Appends a JSON trace entry to `agent_trace.log` |
+| `tools/db_manager.py` | `init_db` | Initialises the SQLite student results database |
+| `tools/db_manager.py` | `save_report` | Persists a grading result for a student |
+| `tools/db_manager.py` | `get_past_reports` | Retrieves all previous grading results for a student |
+| `tools/pdf_processor.py` | `convert_pdf_to_markdown` | Converts a PDF file to Markdown text using `pymupdf4llm` |
 
 **Grade thresholds:**
 
@@ -89,32 +105,40 @@ Calls `phi4-mini` to generate a well-formatted Markdown feedback report. Falls b
 .
 ├── data/
 │   ├── rubric.json          # Rubric definition (criteria + max scores)
-│   └── submission.txt       # Sample student submission
+│   ├── submission.txt       # Sample plain-text student submission
+│   └── students.db          # SQLite database (created by `make init-db`)
 ├── src/mas/
 │   ├── agents/
-│   │   ├── coordinator.py
-│   │   ├── research.py
-│   │   ├── analysis.py
-│   │   └── report.py
+│   │   ├── ingestion.py     # Plain-text ingestion + student ID extraction
+│   │   ├── pdf_ingestion.py # PDF → Markdown ingestion + LLM detail extraction
+│   │   ├── analysis.py      # LLM-powered rubric scoring
+│   │   ├── historical.py    # Persist results + progression insights
+│   │   └── report.py        # Markdown feedback report + marking sheet
 │   ├── tools/
-│   │   ├── file_reader.py
-│   │   ├── file_validator.py
-│   │   ├── file_writer.py
+│   │   ├── file_ops.py      # File reading and validation helpers
+│   │   ├── file_writer.py   # Report and analysis file writers
 │   │   ├── score_calculator.py
-│   │   └── logger.py
-│   ├── graph.py             # LangGraph pipeline + CLI entry point
+│   │   ├── logger.py
+│   │   ├── db_manager.py    # SQLite persistence helpers
+│   │   └── pdf_processor.py # pymupdf4llm PDF-to-Markdown converter
+│   ├── api.py               # FastAPI REST wrapper
+│   ├── config.py            # Environment-based settings (python-dotenv)
+│   ├── graph.py             # LangGraph pipeline definition
 │   ├── llm.py               # Ollama LLM factory functions
 │   └── state.py             # Shared AgentState TypedDict
 ├── tests/
 │   ├── test_tools.py        # Unit tests for all tool modules (no LLM)
-│   ├── test_coordinator.py  # Coordinator agent integration tests
-│   ├── test_research.py     # Research agent integration tests
-│   ├── test_analysis.py     # Analysis agent integration tests (mocked LLM)
-│   ├── test_report.py       # Report agent integration tests (mocked LLM)
+│   ├── test_ingestion.py    # Ingestion agent tests
+│   ├── test_pdf_ingestion.py# PDF ingestion agent tests (mocked LLM)
+│   ├── test_analysis.py     # Analysis agent tests (mocked LLM)
+│   ├── test_historical.py   # Historical agent tests (mocked LLM + DB)
+│   ├── test_report.py       # Report agent tests (mocked LLM)
+│   ├── test_config.py       # Settings / config tests
 │   └── test_llm_judge.py    # LLM-as-a-Judge tests via phi4-mini + requests
-├── output/
-│   └── feedback_report.md   # Generated after running the pipeline
-├── docker-compose.yml       # Ollama service (CPU and GPU profiles)
+├── output/                  # Generated reports (created on first run)
+├── Dockerfile.api           # Docker image for the FastAPI service
+├── docker-compose.yml       # Full stack: Ollama + AutoMark API
+├── .env.example             # Example environment variable file
 ├── Makefile
 └── pyproject.toml
 ```
@@ -124,8 +148,8 @@ Calls `phi4-mini` to generate a well-formatted Markdown feedback report. Falls b
 ## Prerequisites
 
 - **Python 3.11+** and [uv](https://docs.astral.sh/uv/) (package manager)
-- **Docker** with Docker Compose (for the Ollama service)
-- At least **4 GB of free RAM** for the `phi4-mini:3.8b-q4_0` model
+- **Docker** with Docker Compose (for the Ollama service and/or full stack)
+- At least **4 GB of free RAM** for the `phi4-mini:3.8b-q4_K_M` model
 - A GPU with NVIDIA drivers is optional but recommended for faster inference
 
 ---
@@ -135,8 +159,8 @@ Calls `phi4-mini` to generate a well-formatted Markdown feedback report. Falls b
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/nmdra/AI-Agent.git
-cd AI-Agent
+git clone https://github.com/nmdra/AutoMark.git
+cd AutoMark
 ```
 
 **2. Install Python dependencies**
@@ -146,7 +170,20 @@ cd AI-Agent
 uv pip install -e ".[dev]"
 ```
 
-**3. Start the Ollama service**
+**3. Configure environment variables** *(optional)*
+
+```bash
+cp .env.example .env
+# Edit .env to override defaults (model name, paths, Ollama URL, etc.)
+```
+
+**4. Initialise the student database**
+
+```bash
+make init-db
+```
+
+**5. Start the Ollama service**
 
 ```bash
 # CPU (default)
@@ -156,36 +193,94 @@ make start
 make start-gpu
 ```
 
-**4. Pull the model**
+**6. Pull the model**
 
 ```bash
 make pull-model
 ```
 
-This pulls `phi4-mini:3.8b-q4_0` into the Ollama container. The download is ~2.5 GB and only needs to be done once (data is persisted in the `ollama_data` Docker volume).
+This pulls `phi4-mini:3.8b-q4_K_M` into the Ollama container. The download is ~2.5 GB and only needs to be done once (data is persisted in the `~/.ollama` volume mount).
+
+---
+
+## Configuration
+
+Settings are loaded from environment variables (or a `.env` file in the project root). All values have sensible defaults.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AUTOMARK_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Ollama model identifier |
+| `AUTOMARK_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama HTTP API base URL |
+| `AUTOMARK_DB_PATH` | `data/students.db` | SQLite database path |
+| `AUTOMARK_LOG_FILE` | `agent_trace.log` | JSON agent trace log path |
+| `AUTOMARK_OUTPUT_PATH` | `output/feedback_report.md` | Default feedback report path |
+| `AUTOMARK_MARKING_SHEET_PATH` | `output/marking_sheet.md` | Default marking sheet path |
+| `AUTOMARK_ANALYSIS_REPORT_PATH` | `output/analysis_report.md` | Default analysis report path |
+| `AUTOMARK_DATA_BASE_DIR` | `<project_root>/data` | Base directory for submission/rubric files (API path-traversal guard) |
 
 ---
 
 ## Usage
 
-Run the auto-grader against the sample submission and rubric in `data/`:
+### REST API
+
+Start the development API server (connects to Ollama at `localhost:11434`):
 
 ```bash
-make run
+make api
 ```
 
-Example output:
+The interactive API docs are available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
+**Endpoints:**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Liveness check |
+| `POST` | `/grade` | Run the grading pipeline |
+| `GET` | `/sessions/{session_id}/logs` | Retrieve trace log entries for a session |
+
+**Example grading request:**
+
+```bash
+curl -X POST http://localhost:8000/grade \
+  -H "Content-Type: application/json" \
+  -d '{"submission_path": "submission.txt", "rubric_path": "rubric.json"}'
 ```
-=== Auto-Grader Complete ===
-Grade  : B
-Score  : 17
-Report : /path/to/output/feedback_report.md
+
+Both paths are resolved relative to `AUTOMARK_DATA_BASE_DIR` (default: `data/`). Path traversal is blocked.
+
+**Example response (abbreviated):**
+
+```json
+{
+  "session_id": "abc123",
+  "student_id": "IT21000001",
+  "student_name": "",
+  "total_score": 17.0,
+  "percentage": 85.0,
+  "grade": "B",
+  "summary": "A well-structured submission...",
+  "criteria": [...],
+  "feedback_report": "## Feedback\n...",
+  "output_filepath": "output/20240101_120000_..._feedback_report.md",
+  "marking_sheet_path": "output/20240101_120000_..._marking_sheet.md"
+}
 ```
 
-The full Markdown feedback report is written to `output/feedback_report.md`.
+### Docker Stack
 
-To grade a custom submission, edit `data/submission.txt` and `data/rubric.json`, or modify the paths in `src/mas/graph.py`.
+To run the full stack (Ollama + AutoMark API) with Docker Compose:
+
+```bash
+make docker-up
+```
+
+This builds the API image and starts both the Ollama and AutoMark API containers. The API is available at `http://localhost:8000`. Stop with:
+
+```bash
+make docker-down
+```
 
 ---
 
@@ -196,8 +291,11 @@ To grade a custom submission, edit `data/submission.txt` and `data/rubric.json`,
 | `make start` | Start Ollama with the CPU Docker profile |
 | `make start-gpu` | Start Ollama with the NVIDIA GPU Docker profile |
 | `make stop` | Stop all Ollama containers |
-| `make pull-model` | Pull `phi4-mini:3.8b-q4_0` into the Ollama container |
-| `make run` | Run the full auto-grader pipeline |
+| `make pull-model` | Pull `phi4-mini:3.8b-q4_K_M` into the Ollama container |
+| `make init-db` | Initialise the SQLite student database at `data/students.db` |
+| `make api` | Start the FastAPI development server on port 8000 |
+| `make docker-up` | Build and start the full Docker stack (Ollama + API) |
+| `make docker-down` | Stop the full Docker stack |
 | `make test` | Run the full pytest test suite |
 | `make logs` | Tail the Ollama container logs |
 | `make clean` | Remove containers, volumes, `__pycache__`, and generated output |
@@ -215,17 +313,19 @@ uv run pytest tests/ -v
 The test suite is split into three layers:
 
 ### Tool unit tests (`test_tools.py`)
-48 fast, deterministic tests covering all tool modules — no LLM or network required. They test success paths, error handling, edge cases, file I/O, grade boundary thresholds, log format, and timestamp validity.
+Fast, deterministic tests covering all tool modules — no LLM or network required. They test success paths, error handling, edge cases, file I/O, grade boundary thresholds, log format, and timestamp validity.
 
 ### Agent integration tests
 Each agent has its own test file. LLM calls are mocked with `unittest.mock`, so these tests run instantly without Ollama:
 
 | File | Agent under test |
 |---|---|
-| `test_coordinator.py` | Coordinator — validation, session ID, error handling |
-| `test_research.py` | Research — file reading, error propagation, log entries |
+| `test_ingestion.py` | Ingestion — file validation, student ID extraction, error handling |
+| `test_pdf_ingestion.py` | PDF Ingestion — PDF conversion, LLM extraction, fallback behaviour |
 | `test_analysis.py` | Analysis — scoring, score clamping, LLM fallback, grade logic |
+| `test_historical.py` | Historical — DB persistence, past report retrieval, insights generation |
 | `test_report.py` | Report — file writing, LLM fallback, overwrite behaviour |
+| `test_config.py` | Config — environment variable loading, defaults |
 
 ### LLM-as-a-Judge (`test_llm_judge.py`)
 Uses the `requests` library to call `phi4-mini` directly via the Ollama REST API (`/api/generate`) and ask whether a set of assigned scores is fair. The model is prompted to respond with **only** `YES` or `NO`.
@@ -241,8 +341,11 @@ These tests are **automatically skipped** when Ollama is not running or the mode
 
 ## Data Formats
 
-### Submission (`data/submission.txt`)
-Plain UTF-8 text. No special formatting required.
+### Submission
+
+Supported formats:
+- **Plain text** (`.txt`) — UTF-8 encoded. Optionally include `Student ID: <value>` on any line for automatic ID extraction.
+- **PDF** (`.pdf`) — The PDF is converted to Markdown automatically. The LLM attempts to extract `student_id` and `student_name` from the cover page.
 
 ### Rubric (`data/rubric.json`)
 
@@ -268,11 +371,13 @@ Required fields: `total_marks` (integer), `criteria` (array). Each criterion req
 
 ## Output
 
-After a successful run, `output/feedback_report.md` contains:
+After a successful run, the following files are written to the `output/` directory. When called via the REST API, filenames include a timestamp, student name, and student ID to prevent collisions:
 
-- **Overall summary** — 2–3 sentence overview of the submission
-- **Per-criterion feedback** — score, max score, and justification for each rubric criterion
-- **Improvement suggestions** — constructive, actionable advice
+| File | Description |
+|---|---|
+| `*_feedback_report.md` | Overall summary, per-criterion scores and justifications, improvement suggestions |
+| `*_marking_sheet.md` | Compact marking sheet suitable for sharing with the student |
+| `*_analysis_report.md` | Historical performance analysis with progression insights |
 
 An append-only JSON trace log is written to `agent_trace.log` in the project root on every run.
 
@@ -291,4 +396,7 @@ The agent catches this and falls back to zero scores for all criteria with an `e
 
 **GPU not detected**
 Make sure the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed and use `make start-gpu`.
+
+**Database not initialised**
+Run `make init-db` before the first grading run to create `data/students.db`.
 
