@@ -147,7 +147,7 @@ Calls `phi4-mini` to generate a well-formatted Markdown feedback report and a ma
 
 ## Prerequisites
 
-- **Python 3.14+** and [uv](https://docs.astral.sh/uv/) (package manager)
+- **Python 3.13+** and [uv](https://docs.astral.sh/uv/) (package manager)
 - **Docker** with Docker Compose (for the Ollama service and/or full stack)
 - At least **4 GB of free RAM** for the `phi4-mini:3.8b-q4_K_M` model
 - A GPU with NVIDIA drivers is optional but recommended for faster inference
