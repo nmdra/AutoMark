@@ -32,11 +32,24 @@ A FastAPI REST wrapper exposes the pipeline as an HTTP service, making it easy t
 
 The pipeline is a directed LangGraph `StateGraph`. The entry point routes to the appropriate ingestion agent based on the submission file type, then proceeds through analysis, historical comparison, and report generation:
 
-```
-                     ┌── ingestion (txt) ──┐
-_detect ─────────────┤                     ├──► analysis ──► historical ──► report ──► END
-                     └── pdf_ingestion ────┘       │                           ▲
-                                                   └── (ingestion failed) ─────┘
+```mermaid
+flowchart LR
+    detect["_detect"]
+    ingest["ingestion (txt)"]
+    pdf["pdf_ingestion"]
+    analysis["analysis"]
+    historical["historical"]
+    report["report"]
+    endnode["END"]
+
+    detect --> ingest
+    detect --> pdf
+    ingest --> analysis
+    pdf --> analysis
+    analysis --> historical
+    historical --> report
+    report --> endnode
+    analysis -. ingestion failed .-> report
 ```
 
 | Step | Agent | Responsibility |
