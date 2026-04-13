@@ -56,19 +56,39 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
-          tags: local-scan:${{ github.sha }}
+          tags: local-scan:amd64-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Scan image for critical vulnerabilities
+      - name: Scan amd64 image for critical vulnerabilities
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: local-scan:${{ github.sha }}
+          image-ref: local-scan:amd64-${{ github.sha }}
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
           format: table
 
+      - name: Build image for vulnerability scan (linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.api
+          platforms: linux/arm64
+          load: true
+          push: false
+          tags: local-scan:arm64-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan arm64 image for critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: local-scan:arm64-${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v6
         with:
