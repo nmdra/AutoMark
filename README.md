@@ -32,11 +32,24 @@ A FastAPI REST wrapper exposes the pipeline as an HTTP service, making it easy t
 
 The pipeline is a directed LangGraph `StateGraph`. The entry point routes to the appropriate ingestion agent based on the submission file type, then proceeds through analysis, historical comparison, and report generation:
 
-```
-                     ┌── ingestion (txt) ──┐
-_detect ─────────────┤                     ├──► analysis ──► historical ──► report ──► END
-                     └── pdf_ingestion ────┘       │                           ▲
-                                                   └── (ingestion failed) ─────┘
+```mermaid
+flowchart LR
+    detect["_detect"]
+    ingest["ingestion (txt)"]
+    pdf["pdf_ingestion"]
+    analysis["analysis"]
+    historical["historical"]
+    report["report"]
+    endnode["END"]
+
+    detect --> ingest
+    detect --> pdf
+    ingest --> analysis
+    pdf --> analysis
+    analysis --> historical
+    historical --> report
+    report --> endnode
+    analysis -. ingestion failed .-> report
 ```
 
 | Step | Agent | Responsibility |
@@ -58,16 +71,16 @@ If ingestion fails (e.g. missing files), the pipeline short-circuits directly to
 Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions. Reads the plain-text submission and parses the rubric JSON. Extracts `student_id` from the submission text using a regex pattern (`Student ID: <value>`). Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### PDF Ingestion Agent (`agents/pdf_ingestion.py`)
-Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, and always passes that full Markdown to downstream scoring/reporting. The light LLM is used only for extracting student metadata (`student_id`, `student_name`) from a compact metadata-focused prompt. Sets `ingestion_status` to `"success"` or `"failed"`.
+Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, and always passes that full Markdown to downstream scoring/reporting. The light model (default: `gemma3:1b-it-q4_K_M`) is used for extracting student metadata (`student_id`, `student_name`) from a compact metadata-focused prompt. Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### Analysis Agent (`agents/analysis.py`)
-Calls `phi4-mini` via LangChain/Ollama to score each rubric criterion. LLM output is structured using a Pydantic schema (`RubricScores`). Scores are clamped to `[0, max_score]` and the total is computed deterministically by `calculate_total_score` — the LLM is never trusted for arithmetic.
+Calls the analysis model (default: `phi4-mini:3.8b-q4_K_M`) via LangChain/Ollama to score each rubric criterion. LLM output is structured using a Pydantic schema (`RubricScores`). Scores are clamped to `[0, max_score]` and the total is computed deterministically by `calculate_total_score` — the LLM is never trusted for arithmetic.
 
 ### Historical Agent (`agents/historical.py`)
-Saves the current grading result to a SQLite database, retrieves all previous reports for the student, and uses the LLM to generate concise progression insights when past reports exist. Also writes a separate performance analysis report to disk.
+Saves the current grading result to a SQLite database, retrieves all previous reports for the student, and uses the light model to generate concise progression insights when past reports exist. Also writes a separate performance analysis report to disk.
 
 ### Report Agent (`agents/report.py`)
-Calls `phi4-mini` to generate a well-formatted Markdown feedback report and a marking sheet. Falls back to a template-based report if the LLM is unavailable.
+Calls the analysis model to generate a well-formatted Markdown feedback report and a marking sheet. Falls back to a template-based report if the LLM is unavailable.
 
 ---
 
@@ -199,7 +212,7 @@ make start-gpu
 make pull-model
 ```
 
-This pulls `phi4-mini:3.8b-q4_K_M` into the Ollama container. The download is ~2.5 GB and only needs to be done once (data is persisted in the `~/.ollama` volume mount).
+This pre-pulls the default analysis model into the Ollama container. The initial download can be several GB and only needs to be done once (data is persisted in the `~/.ollama` volume mount).
 
 ---
 
@@ -207,9 +220,15 @@ This pulls `phi4-mini:3.8b-q4_K_M` into the Ollama container. The download is ~2
 
 Settings are loaded from environment variables (or a `.env` file in the project root). All values have sensible defaults.
 
+AutoMark uses two local Ollama model roles by default:
+- **Analysis model** for scoring and report prose (`AUTOMARK_ANALYSIS_MODEL_NAME`)
+- **Light model** for PDF metadata extraction and historical insights (`AUTOMARK_LIGHT_MODEL_NAME`)
+
 | Variable | Default | Description |
 |---|---|---|
-| `AUTOMARK_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Ollama model identifier |
+| `AUTOMARK_ANALYSIS_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Ollama model identifier for rubric scoring and report generation |
+| `AUTOMARK_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Legacy alias for `AUTOMARK_ANALYSIS_MODEL_NAME` (deprecated; used as fallback when analysis model is unset, ignored when it is set) |
+| `AUTOMARK_LIGHT_MODEL_NAME` | `gemma3:1b-it-q4_K_M` | Ollama model for lightweight extraction/insight tasks |
 | `AUTOMARK_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama HTTP API base URL |
 | `AUTOMARK_DB_PATH` | `data/students.db` | SQLite database path |
 | `AUTOMARK_LOG_FILE` | `agent_trace.log` | JSON agent trace log path |
@@ -217,12 +236,20 @@ Settings are loaded from environment variables (or a `.env` file in the project 
 | `AUTOMARK_MARKING_SHEET_PATH` | `output/marking_sheet.md` | Default marking sheet path |
 | `AUTOMARK_ANALYSIS_REPORT_PATH` | `output/analysis_report.md` | Default analysis report path |
 | `AUTOMARK_DATA_BASE_DIR` | `<project_root>/data` | Base directory for submission/rubric files (API path-traversal guard) |
+| `AUTOMARK_NUM_CTX` | `4096` | Ollama context window size |
+| `AUTOMARK_NUM_PREDICT` | `512` | Max generated tokens per model response |
+| `AUTOMARK_LLM_REPORT_ENABLED` | `true` | Set to `false` to skip prose LLM report generation and use deterministic template fallback |
+| `AUTOMARK_SUBMISSION_MAX_CHARS` | `8000` | Max submission characters sent to analysis model |
+| `AUTOMARK_MIN_REPORTS_FOR_INSIGHTS` | `1` | Minimum number of past reports required before generating progression insights |
+| `AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED` | `true` | Set to `false` to force model-based student-detail extraction instead of regex fast path |
 | `AUTOMARK_JOB_WORKER_CONCURRENCY` | `2` | Worker threads for async batch jobs |
 | `AUTOMARK_JOB_QUEUE_MAX_SIZE` | `100` | Max queued batch jobs in memory |
 | `AUTOMARK_JOB_MAX_RETRIES` | `1` | Default retries per batch item |
 | `AUTOMARK_BATCH_MAX_ITEMS` | `100` | Max items accepted per batch request |
 | `AUTOMARK_JOB_RETENTION_DAYS` | `30` | Suggested retention period for completed jobs |
 | `AUTOMARK_EXPORT_MAX_BYTES` | `10485760` | Max allowed CSV/JSON/PDF export size (bytes) |
+
+For better throughput with parallel report/insight generation, set `OLLAMA_NUM_PARALLEL>=2` on the Ollama service.
 
 ---
 
@@ -320,7 +347,7 @@ make docker-down
 | `make start` | Start Ollama with the CPU Docker profile |
 | `make start-gpu` | Start Ollama with the NVIDIA GPU Docker profile |
 | `make stop` | Stop all Ollama containers |
-| `make pull-model` | Pull `phi4-mini:3.8b-q4_K_M` into the Ollama container |
+| `make pull-model` | Pull the default analysis model into the Ollama container |
 | `make init-db` | Initialise the SQLite student database at `data/students.db` |
 | `make api` | Start the FastAPI development server on port 8000 |
 | `make docker-up` | Build and start the full Docker stack (Ollama + API) |
