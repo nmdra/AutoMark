@@ -6,6 +6,9 @@ services:
       - "11434:11434"
     volumes:
       - ~/.ollama:/root/.ollama
+    environment:
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_NUM_PARALLEL=2
     restart: unless-stopped
 
   automark-api:
