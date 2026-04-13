@@ -20,6 +20,9 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.11-slim
 
+ARG APP_UID=1000
+ARG APP_GID=1000
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -28,11 +31,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --chown=app:app src/ ./src/
+COPY src/ ./src/
 
-RUN addgroup --system app && adduser --system --ingroup app app \
-    && mkdir -p /app/output \
-    && chown app:app /app/output
+RUN groupadd --gid "${APP_GID}" app \
+    && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /usr/sbin/nologin app \
+    && mkdir -p /app/output /app/data \
+    && chown app:app /app/output /app/data
 
 USER app
 
