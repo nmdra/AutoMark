@@ -222,7 +222,7 @@ Settings are loaded from environment variables (or a `.env` file in the project 
 
 AutoMark uses two local Ollama model roles by default:
 - **Analysis model** for scoring and report prose (`AUTOMARK_ANALYSIS_MODEL_NAME`)
-- **Light model** for PDF detail extraction and historical insights (`AUTOMARK_LIGHT_MODEL_NAME`)
+- **Light model** for PDF metadata extraction and historical insights (`AUTOMARK_LIGHT_MODEL_NAME`)
 
 | Variable | Default | Description |
 |---|---|---|
