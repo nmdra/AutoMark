@@ -613,7 +613,10 @@ class _JobQueueManager:
                     continue
                 result: dict[str, Any] | None = None
                 last_error = ""
-                max_retries = int(get_job(settings.db_path, job_id)["max_retries"])  # type: ignore[index]
+                job_row = get_job(settings.db_path, job_id)
+                max_retries = int(
+                    (job_row or {}).get("max_retries", settings.job_max_retries)
+                )
                 for _ in range(max_retries + 1):
                     try:
                         result = _execute_grade(
@@ -623,7 +626,7 @@ class _JobQueueManager:
                         break
                     except HTTPException as exc:
                         last_error = str(exc.detail)
-                    except Exception as exc:  # noqa: BLE001
+                    except (RuntimeError, ValueError, OSError) as exc:
                         last_error = str(exc)
                 if result is not None:
                     mark_job_item_completed(settings.db_path, int(item["id"]), result)
@@ -637,7 +640,9 @@ class _JobQueueManager:
             if is_job_cancel_requested(settings.db_path, job_id):
                 mark_remaining_items_cancelled(settings.db_path, job_id)
             refresh_job_progress(settings.db_path, job_id)
-        except Exception as exc:  # noqa: BLE001
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
             mark_job_failed(settings.db_path, job_id, str(exc))
 
 
@@ -716,9 +721,9 @@ async def grade_batch(request: BatchGradeRequest) -> BatchGradeAcceptedResponse:
             if not rubric.exists():
                 raise ValueError(f"Rubric file not found: {item.rubric_path}")
             accepted += 1
-        except Exception as exc:  # noqa: BLE001
+        except (HTTPException, ValueError) as exc:
             status = ITEM_STATUS_FAILED
-            error = str(exc)
+            error = str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
             rejected += 1
         items_for_db.append(
             {
@@ -751,7 +756,8 @@ async def grade_batch(request: BatchGradeRequest) -> BatchGradeAcceptedResponse:
         status = JobStatus.queued
     else:
         refresh_job_progress(settings.db_path, job_id)
-        status = JobStatus(get_job(settings.db_path, job_id)["status"])  # type: ignore[index]
+        refreshed = get_job(settings.db_path, job_id)
+        status = JobStatus((refreshed or {}).get("status", JOB_STATUS_FAILED))
 
     return BatchGradeAcceptedResponse(
         job_id=job_id,
@@ -810,10 +816,12 @@ async def cancel_job(job_id: str) -> JobCancelResponse:
         )
     changed = request_job_cancel(settings.db_path, job_id)
     refreshed = get_job(settings.db_path, job_id)
+    if not refreshed:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
     return JobCancelResponse(
         job_id=job_id,
-        status=JobStatus(refreshed["status"]),  # type: ignore[index]
-        cancel_requested=changed or bool(refreshed.get("cancel_requested")),  # type: ignore[union-attr]
+        status=JobStatus(refreshed["status"]),
+        cancel_requested=changed or bool(refreshed.get("cancel_requested")),
     )
 
 
@@ -844,7 +852,7 @@ async def generate_job_export(job_id: str, export_format: ExportFormat) -> JobAr
     _EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     extension = "json" if export_format == ExportFormat.json else export_format.value
     artifact_id = str(uuid.uuid4())
-    artifact_path = _EXPORT_DIR / f"{job_id}_{artifact_id}.{extension}"
+    artifact_path = _EXPORT_DIR / f"{artifact_id}.{extension}"
     artifact_path.write_bytes(content)
     save_job_artifact(
         db_path=settings.db_path,
@@ -877,7 +885,12 @@ async def download_job_export(job_id: str, export_format: ExportFormat) -> FileR
             detail="Export artifact not found. Generate it first.",
         )
     path = Path(artifact["file_path"])
-    if not path.exists():
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(_EXPORT_DIR.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid artifact path.") from exc
+    if not resolved_path.exists():
         raise HTTPException(status_code=404, detail="Artifact file does not exist on disk.")
     media_type = {
         ExportFormat.json.value: "application/json",
@@ -885,9 +898,9 @@ async def download_job_export(job_id: str, export_format: ExportFormat) -> FileR
         ExportFormat.pdf.value: "application/pdf",
     }[export_format.value]
     return FileResponse(
-        path=str(path),
+        path=str(resolved_path),
         media_type=media_type,
-        filename=path.name,
+        filename=resolved_path.name,
     )
 
 

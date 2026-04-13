@@ -231,3 +231,7 @@ def test_generate_and_download_json_export(tmp_path):
     downloaded = client.get(f"/jobs/{job_id}/exports/json")
     assert downloaded.status_code == 200
     assert downloaded.headers["content-type"].startswith("application/json")
+    exported = downloaded.json()
+    assert exported["job"]["job_id"] == job_id
+    assert len(exported["items"]) == 1
+    assert "generated_at" in exported
