@@ -30,13 +30,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY --from=builder /opt/venv /opt/venv
-COPY src/ ./src/
-
-RUN groupadd --gid "${APP_GID}" app \
-    && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /usr/sbin/nologin app \
+RUN addgroup --gid "${APP_GID}" app \
+    && adduser --uid "${APP_UID}" --gid "${APP_GID}" --disabled-password --gecos "" app \
     && mkdir -p /app/output /app/data \
     && chown app:app /app/output /app/data
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=app:app src/ ./src/
 
 USER app
 
