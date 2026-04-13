@@ -158,7 +158,7 @@ class TestIngestionAgent:
 
         assert result["ingestion_status"] == "failed"
 
-    def test_student_metadata_empty_when_not_in_submission(self, tmp_path):
+    def test_llm_returns_empty_when_metadata_not_found(self, tmp_path):
         sub = tmp_path / "submission.txt"
         rub = tmp_path / "rubric.json"
         sub.write_text("No ID in this text.", encoding="utf-8")
@@ -231,6 +231,7 @@ class TestIngestionAgent:
         assert result["student_id"] == "IT21000077"
         assert result["student_name"] == ""
         assert "error" in result
+        assert "llm unavailable" in result["error"]
 
     def test_log_entry_appended(self, tmp_path):
         sub = tmp_path / "submission.txt"

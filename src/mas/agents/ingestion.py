@@ -85,7 +85,7 @@ def _build_metadata_context(submission_text: str) -> str:
     return (
         f"{top_chunk}\n\n"
         "## Candidate Identity Lines\n"
-        f"{chr(10).join(identity_lines)}"
+        "\n".join(identity_lines)
     )
 
 
@@ -138,7 +138,10 @@ def ingestion_agent(state: AgentState) -> dict:
         regex_name = _extract_student_name(submission_text)
         student_id = regex_id
         student_name = regex_name
-        if not (settings.pdf_regex_fast_path_enabled and regex_id and regex_name):
+        use_llm_extraction = (
+            not settings.pdf_regex_fast_path_enabled or not regex_id or not regex_name
+        )
+        if use_llm_extraction:
             try:
                 llm = get_light_json_llm(schema=StudentDetails)
                 metadata_context = _build_metadata_context(submission_text)
@@ -165,7 +168,7 @@ def ingestion_agent(state: AgentState) -> dict:
             except Exception as exc:  # noqa: BLE001
                 student_id = regex_id
                 student_name = regex_name
-                error = str(exc)
+                error = f"LLM extraction failed: {exc}"
         ingestion_status = "success"
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
@@ -177,6 +180,8 @@ def ingestion_agent(state: AgentState) -> dict:
         "submission_text_length": len(submission_text),
         "rubric_criteria_count": len(rubric_data.get("criteria", [])),
     }
+    if error:
+        outputs["error"] = error
 
     log_entry = log_agent_action(
         session_id=session_id,
