@@ -545,39 +545,42 @@ def _build_export_content(job: dict[str, Any], items: list[dict[str, Any]], expo
 
     if export_format == ExportFormat.pdf.value:
         doc = fitz.open()
-        lines = [
-            f"AutoMark Batch Job Export",
-            f"Job ID: {job['job_id']}",
-            f"Status: {job['status']}",
-            f"Created: {job['created_at']}",
-            f"Completed: {job.get('completed_at') or ''}",
-            "",
-        ]
-        progress = job["progress"]
-        lines.extend(
-            [
-                f"Total: {progress['total']}",
-                f"Completed: {progress['completed']}",
-                f"Failed: {progress['failed']}",
-                f"Cancelled: {progress['cancelled']}",
+        try:
+            lines = [
+                f"AutoMark Batch Job Export",
+                f"Job ID: {job['job_id']}",
+                f"Status: {job['status']}",
+                f"Created: {job['created_at']}",
+                f"Completed: {job.get('completed_at') or ''}",
                 "",
-                "Items:",
             ]
-        )
-        for item in items:
-            lines.append(
-                f"- [{item.get('status')}] #{item.get('item_index')} {item.get('correlation_id')} "
-                f"(grade={item.get('grade') or 'N/A'}, score={item.get('total_score')}) "
-                f"{item.get('error') or ''}"
+            progress = job["progress"]
+            lines.extend(
+                [
+                    f"Total: {progress['total']}",
+                    f"Completed: {progress['completed']}",
+                    f"Failed: {progress['failed']}",
+                    f"Cancelled: {progress['cancelled']}",
+                    "",
+                    "Items:",
+                ]
             )
-        page = doc.new_page()
-        page.insert_textbox(
-            fitz.Rect(36, 36, 559, 806),
-            "\n".join(lines),
-            fontsize=10,
-            fontname="helv",
-        )
-        return doc.tobytes()
+            for item in items:
+                lines.append(
+                    f"- [{item.get('status')}] #{item.get('item_index')} {item.get('correlation_id')} "
+                    f"(grade={item.get('grade') or 'N/A'}, score={item.get('total_score')}) "
+                    f"{item.get('error') or ''}"
+                )
+            page = doc.new_page()
+            page.insert_textbox(
+                fitz.Rect(36, 36, 559, 806),
+                "\n".join(lines),
+                fontsize=10,
+                fontname="helv",
+            )
+            return doc.tobytes()
+        finally:
+            doc.close()
 
     raise HTTPException(status_code=422, detail=f"Unsupported export format: {export_format}")
 
