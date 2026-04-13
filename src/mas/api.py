@@ -237,11 +237,20 @@ class JobArtifactResponse(BaseModel):
     artifact_id: str
     job_id: str
     format: ExportFormat
-    file_path: str
+    file_name: str = Field(
+        description="Artifact filename only; server filesystem paths are kept internal."
+    )
     size_bytes: int
     created_at: str
 
-
+    @model_validator(mode="before")
+    @classmethod
+    def _convert_file_path_to_file_name(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            file_path = data.pop("file_path", None)
+            if file_path and "file_name" not in data:
+                data["file_name"] = os.path.basename(file_path)
+        return data
 # ── Application ────────────────────────────────────────────────────────────────
 
 app = FastAPI(
