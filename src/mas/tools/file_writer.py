@@ -6,6 +6,38 @@ from pathlib import Path
 from typing import Any
 
 
+_ASSIGNMENT_MISTAKE_LABELS = {
+    "missing_answer": "Missing answer",
+    "out_of_context": "Out of context",
+}
+
+
+def _write_markdown_file(content: str, output_path: str) -> str:
+    """Write Markdown content to disk and return the resolved path."""
+    destination_path = Path(output_path)
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        destination_path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Failed to write report to '{destination_path}': {exc}"
+        ) from exc
+    return str(destination_path.resolve())
+
+
+def _escape_markdown_table_cell(value: Any) -> str:
+    """Normalize a value for safe insertion into a Markdown table cell."""
+    text = str(value)
+    text = " ".join(text.splitlines())
+    text = " ".join(text.split())
+    return text.replace("|", "\\|")
+
+
+def _assignment_mistake_label(value: Any) -> str:
+    """Return a user-facing assignment mistake label."""
+    return _ASSIGNMENT_MISTAKE_LABELS.get(str(value).strip().lower(), "None")
+
+
 def write_feedback_report(content: str, output_path: str) -> str:
     """Write the feedback report to disk, creating directories as needed.
 
@@ -23,10 +55,7 @@ def write_feedback_report(content: str, output_path: str) -> str:
     str
         The resolved absolute path of the written file.
     """
-    dest = Path(output_path)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(content, encoding="utf-8")
-    return str(dest.resolve())
+    return _write_markdown_file(content, output_path)
 
 
 def write_analysis_report(
@@ -58,7 +87,7 @@ def write_analysis_report(
     str
         The resolved absolute path of the written file.
     """
-    lines: list[str] = [
+    markdown_lines: list[str] = [
         "# Performance Analysis Report",
         "",
         f"**Student ID:** {student_id or 'N/A'}",
@@ -68,33 +97,26 @@ def write_analysis_report(
     ]
 
     if past_reports:
-        lines += [
+        markdown_lines.extend(
+            [
             "| Session | Timestamp | Score | Grade |",
             "|---------|-----------|-------|-------|",
-        ]
-        for r in past_reports:
-            lines.append(
-                f"| {r.get('session_id', '')} "
-                f"| {r.get('timestamp', '')} "
-                f"| {r.get('total_score', '')} "
-                f"| {r.get('grade', '')} |"
+            ]
+        )
+        for report in past_reports:
+            markdown_lines.append(
+                f"| {report.get('session_id', '')} "
+                f"| {report.get('timestamp', '')} "
+                f"| {report.get('total_score', '')} "
+                f"| {report.get('grade', '')} |"
             )
     else:
-        lines.append("_No historical records found for this student._")
+        markdown_lines.append("_No historical records found for this student._")
 
     if progression_insights:
-        lines += [
-            "",
-            "## Progression Insights",
-            "",
-            progression_insights,
-        ]
+        markdown_lines.extend(["", "## Progression Insights", "", progression_insights])
 
-    content = "\n".join(lines) + "\n"
-    dest = Path(output_path)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(content, encoding="utf-8")
-    return str(dest.resolve())
+    return _write_markdown_file("\n".join(markdown_lines) + "\n", output_path)
 
 
 def write_marking_sheet(
@@ -139,14 +161,7 @@ def write_marking_sheet(
     str
         The resolved absolute path of the written file.
     """
-    def _escape_markdown_table_cell(value: Any) -> str:
-        """Normalize a value for safe insertion into a Markdown table cell."""
-        text = str(value)
-        text = " ".join(text.splitlines())
-        text = " ".join(text.split())
-        return text.replace("|", "\\|")
-
-    lines: list[str] = [
+    markdown_lines: list[str] = [
         "# Marking Sheet",
         "",
         f"**Module:** {module}  ",
@@ -154,33 +169,32 @@ def write_marking_sheet(
         f"**Student ID:** {student_id or 'N/A'}  ",
     ]
     if student_name:
-        lines.append(f"**Student Name:** {student_name}  ")
-    lines += [
+        markdown_lines.append(f"**Student Name:** {student_name}  ")
+    markdown_lines.extend(
+        [
         "",
         "## Criterion Scores",
         "",
         "| Criterion | Score | Max Score | Common Mistake | Justification |",
         "|-----------|-------|-----------|----------------|---------------|",
-    ]
+        ]
+    )
 
-    common_mistakes: list[str] = []
-    for c in scored_criteria:
+    common_assignment_mistakes: list[str] = []
+    for criterion in scored_criteria:
         criterion_name = _escape_markdown_table_cell(
-            c.get("name", c.get("criterion_id", ""))
+            criterion.get("name", criterion.get("criterion_id", ""))
         )
-        score = _escape_markdown_table_cell(c.get("score", 0))
-        max_score = _escape_markdown_table_cell(c.get("max_score", 0))
-        mistake = str(c.get("assignment_mistake", "none")).strip().lower()
-        if mistake == "missing_answer":
-            mistake_label = "Missing answer"
-            common_mistakes.append(f"{criterion_name}: {mistake_label}")
-        elif mistake == "out_of_context":
-            mistake_label = "Out of context"
-            common_mistakes.append(f"{criterion_name}: {mistake_label}")
-        else:
-            mistake_label = "None"
-        justification = _escape_markdown_table_cell(c.get("justification", ""))
-        lines.append(
+        score = _escape_markdown_table_cell(criterion.get("score", 0))
+        max_score = _escape_markdown_table_cell(criterion.get("max_score", 0))
+        mistake_label = _assignment_mistake_label(
+            criterion.get("assignment_mistake", "none")
+        )
+        if mistake_label != "None":
+            common_assignment_mistakes.append(f"{criterion_name}: {mistake_label}")
+
+        justification = _escape_markdown_table_cell(criterion.get("justification", ""))
+        markdown_lines.append(
             f"| {criterion_name} "
             f"| {score} "
             f"| {max_score} "
@@ -189,31 +203,27 @@ def write_marking_sheet(
         )
 
     percentage = (total_score / total_marks * 100) if total_marks > 0 else 0.0
-    lines += [
-        "",
-        "## Overall Result",
-        "",
-        f"| Total Score | Max Marks | Percentage | Grade |",
-        f"|-------------|-----------|------------|-------|",
-        (
-            f"| {_escape_markdown_table_cell(total_score)} "
-            f"| {_escape_markdown_table_cell(total_marks)} "
-            f"| {_escape_markdown_table_cell(f'{percentage:.2f}%')} "
-            f"| {_escape_markdown_table_cell(grade)} |"
-        ),
-    ]
-    lines += [
-        "",
-        "## Common Assignment Mistakes",
-        "",
-    ]
-    if common_mistakes:
-        lines.extend(f"- {item}" for item in common_mistakes)
+    markdown_lines.extend(
+        [
+            "",
+            "## Overall Result",
+            "",
+            "| Total Score | Max Marks | Percentage | Grade |",
+            "|-------------|-----------|------------|-------|",
+            (
+                f"| {_escape_markdown_table_cell(total_score)} "
+                f"| {_escape_markdown_table_cell(total_marks)} "
+                f"| {_escape_markdown_table_cell(f'{percentage:.2f}%')} "
+                f"| {_escape_markdown_table_cell(grade)} |"
+            ),
+            "",
+            "## Common Assignment Mistakes",
+            "",
+        ]
+    )
+    if common_assignment_mistakes:
+        markdown_lines.extend(f"- {item}" for item in common_assignment_mistakes)
     else:
-        lines.append("- None identified.")
+        markdown_lines.append("- None identified.")
 
-    content = "\n".join(lines) + "\n"
-    dest = Path(output_path)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(content, encoding="utf-8")
-    return str(dest.resolve())
+    return _write_markdown_file("\n".join(markdown_lines) + "\n", output_path)

@@ -80,8 +80,9 @@ AUTOMARK_MIN_REPORTS_FOR_INSIGHTS
     Default: ``1``
 
 AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED
-    Set to ``false`` (case-insensitive) to skip regex-only extraction for PDF
-    student details and always use the model-based extractor.
+    Set to ``false`` (case-insensitive) to skip regex fast-path extraction for
+    student details in both PDF and text submissions and always use the
+    model-based extractor.
     Default: ``true``
 
 Ollama parallel-request note

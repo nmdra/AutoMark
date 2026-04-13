@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mas.agents.ingestion import _extract_student_id, ingestion_agent
+from mas.agents.ingestion import _extract_student_id, _extract_student_name, ingestion_agent
 from mas.state import AgentState
 
 
@@ -31,7 +32,7 @@ SAMPLE_RUBRIC = {
     ],
 }
 
-SAMPLE_SUBMISSION = "Student ID: IT21000001\n\nMy answer here."
+SAMPLE_SUBMISSION = "Student Name: Jane Smith\nStudent ID: IT21000001\n\nMy answer here."
 
 
 # ── _extract_student_id unit tests ────────────────────────────────────────────
@@ -54,6 +55,24 @@ class TestExtractStudentId:
         assert _extract_student_id(text) == "IT21000099"
 
 
+
+
+# ── _extract_student_name unit tests ──────────────────────────────────────────
+
+class TestExtractStudentName:
+    def test_extracts_standard_format(self):
+        assert _extract_student_name("Student Name: Jane Smith") == "Jane Smith"
+
+    def test_case_insensitive(self):
+        assert _extract_student_name("student name: alice") == "alice"
+
+    def test_allows_alternate_separator(self):
+        assert _extract_student_name("Student Name - Bob Brown") == "Bob Brown"
+
+    def test_returns_empty_when_not_found(self):
+        assert _extract_student_name("No name here") == ""
+
+
 # ── ingestion_agent tests ─────────────────────────────────────────────────────
 
 class TestIngestionAgent:
@@ -67,6 +86,7 @@ class TestIngestionAgent:
 
         assert result["ingestion_status"] == "success"
         assert result["student_id"] == "IT21000001"
+        assert result["student_name"] == "Jane Smith"
         assert result["submission_text"] == SAMPLE_SUBMISSION
         assert result["rubric_data"]["total_marks"] == 10
 
@@ -138,16 +158,80 @@ class TestIngestionAgent:
 
         assert result["ingestion_status"] == "failed"
 
-    def test_student_id_empty_when_not_in_submission(self, tmp_path):
+    def test_llm_returns_empty_when_metadata_not_found(self, tmp_path):
         sub = tmp_path / "submission.txt"
         rub = tmp_path / "rubric.json"
         sub.write_text("No ID in this text.", encoding="utf-8")
         rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
+        with patch("mas.agents.ingestion.get_light_json_llm") as mock_llm:
+            mock_details = MagicMock()
+            mock_details.student_id = ""
+            mock_details.student_name = ""
+            mock_llm.return_value.invoke.return_value = mock_details
+            result = ingestion_agent(_make_state(str(sub), str(rub)))
+
+        assert result["ingestion_status"] == "success"
+        assert result["student_id"] == ""
+        assert result["student_name"] == ""
+
+    @patch("mas.agents.ingestion.get_light_json_llm")
+    @patch("mas.agents.ingestion.settings")
+    def test_llm_extraction_used_when_fast_path_disabled(
+        self, mock_settings, mock_llm, tmp_path
+    ):
+        sub = tmp_path / "submission.txt"
+        rub = tmp_path / "rubric.json"
+        sub.write_text(SAMPLE_SUBMISSION, encoding="utf-8")
+        rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
+        mock_settings.pdf_regex_fast_path_enabled = False
+        mock_settings.light_model_name = "test-light-model"
+
+        mock_details = MagicMock()
+        mock_details.student_id = "IT21000001"
+        mock_details.student_name = "Jane Smith"
+        mock_llm.return_value.invoke.return_value = mock_details
 
         result = ingestion_agent(_make_state(str(sub), str(rub)))
 
         assert result["ingestion_status"] == "success"
-        assert result["student_id"] == ""
+        assert result["student_id"] == "IT21000001"
+        assert result["student_name"] == "Jane Smith"
+        assert mock_llm.called
+
+    @patch("mas.agents.ingestion.get_light_json_llm")
+    def test_llm_fallback_used_when_regex_missing_fields(self, mock_llm, tmp_path):
+        sub = tmp_path / "submission.txt"
+        rub = tmp_path / "rubric.json"
+        sub.write_text("Answer text without explicit metadata.", encoding="utf-8")
+        rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
+
+        mock_details = MagicMock()
+        mock_details.student_id = "IT21009999"
+        mock_details.student_name = "Alex Lee"
+        mock_llm.return_value.invoke.return_value = mock_details
+
+        result = ingestion_agent(_make_state(str(sub), str(rub)))
+
+        assert result["ingestion_status"] == "success"
+        assert result["student_id"] == "IT21009999"
+        assert result["student_name"] == "Alex Lee"
+        assert mock_llm.called
+
+    @patch("mas.agents.ingestion.get_light_json_llm")
+    def test_llm_failure_falls_back_to_regex(self, mock_llm, tmp_path):
+        sub = tmp_path / "submission.txt"
+        rub = tmp_path / "rubric.json"
+        sub.write_text("Student ID: IT21000077\nContent body.", encoding="utf-8")
+        rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
+        mock_llm.return_value.invoke.side_effect = RuntimeError("llm unavailable")
+
+        result = ingestion_agent(_make_state(str(sub), str(rub)))
+
+        assert result["ingestion_status"] == "success"
+        assert result["student_id"] == "IT21000077"
+        assert result["student_name"] == ""
+        assert "error" in result
+        assert "llm unavailable" in result["error"]
 
     def test_log_entry_appended(self, tmp_path):
         sub = tmp_path / "submission.txt"
@@ -195,7 +279,7 @@ class TestIngestionAgent:
         result = ingestion_agent(_make_state(str(sub), str(rub)))
 
         expected = {
-            "session_id", "ingestion_status", "student_id",
+            "session_id", "ingestion_status", "student_id", "student_name",
             "submission_text", "rubric_data", "agent_logs",
         }
         assert set(result.keys()) == expected
