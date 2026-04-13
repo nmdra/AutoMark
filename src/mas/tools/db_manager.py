@@ -487,7 +487,28 @@ def mark_job_failed(db_path: str, job_id: str, error: str) -> None:
             """,
             (JOB_STATUS_FAILED, error, now, now, job_id),
         )
+        conn.execute(
+            """
+            UPDATE job_items
+            SET
+                status = ?,
+                error = COALESCE(error, ?),
+                completed_at = COALESCE(completed_at, ?),
+                updated_at = ?
+            WHERE job_id = ? AND status IN (?, ?)
+            """,
+            (
+                ITEM_STATUS_FAILED,
+                error,
+                now,
+                now,
+                job_id,
+                ITEM_STATUS_QUEUED,
+                ITEM_STATUS_RUNNING,
+            ),
+        )
         conn.commit()
+    refresh_job_progress(db_path, job_id)
 
 
 def request_job_cancel(db_path: str, job_id: str) -> bool:
