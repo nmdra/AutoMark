@@ -1,5 +1,5 @@
 [project]
-name = "ctse-mas"
+name = "automark-mas"
 version = "0.1.0"
 description = "Student Assignment Auto-Grader Multi-Agent System"
 readme = "README.md"
