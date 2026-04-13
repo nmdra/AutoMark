@@ -442,7 +442,7 @@ def refresh_job_progress(db_path: str, job_id: str) -> dict[str, int]:
             and (counts["completed"] + counts["failed"] + counts["cancelled"] >= job["total_items"])
         )
         if done and job["status"] not in _TERMINAL_JOB_STATUSES:
-            if counts["cancelled"] > 0 and job["cancel_requested"]:
+            if job["cancel_requested"]:
                 new_status = JOB_STATUS_CANCELLED
             elif counts["completed"] == 0 and counts["failed"] > 0:
                 new_status = JOB_STATUS_FAILED
