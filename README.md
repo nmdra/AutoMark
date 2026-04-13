@@ -220,14 +220,14 @@ This pre-pulls the default analysis model into the Ollama container. The initial
 
 Settings are loaded from environment variables (or a `.env` file in the project root). All values have sensible defaults.
 
-AutoMark uses two local Ollama model tiers by default:
+AutoMark uses two local Ollama model roles by default:
 - **Analysis model** for scoring and report prose (`AUTOMARK_ANALYSIS_MODEL_NAME`)
 - **Light model** for PDF detail extraction and historical insights (`AUTOMARK_LIGHT_MODEL_NAME`)
 
 | Variable | Default | Description |
 |---|---|---|
 | `AUTOMARK_ANALYSIS_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Ollama model identifier for rubric scoring and report generation |
-| `AUTOMARK_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Legacy alias used only when `AUTOMARK_ANALYSIS_MODEL_NAME` is unset (if both are set, `AUTOMARK_ANALYSIS_MODEL_NAME` takes precedence) |
+| `AUTOMARK_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Legacy alias for `AUTOMARK_ANALYSIS_MODEL_NAME` (deprecated; lower precedence) |
 | `AUTOMARK_LIGHT_MODEL_NAME` | `gemma3:1b-it-q4_K_M` | Ollama model for lightweight extraction/insight tasks |
 | `AUTOMARK_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama HTTP API base URL |
 | `AUTOMARK_DB_PATH` | `data/students.db` | SQLite database path |
