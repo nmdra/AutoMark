@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -115,6 +116,43 @@ class TestDbManager:
         assert Path(db_path).exists()
         reports = get_past_reports(db_path, "S001")
         assert len(reports) == 1
+
+    def test_init_db_enables_foreign_keys_for_new_connections(self, tmp_path):
+        db_path = str(tmp_path / "test.db")
+        init_db(db_path)
+        # Runtime enforcement is enabled by db_manager helper connections.
+        from mas.tools.db_manager import _dict_conn  # local import for test-only verification
+
+        with _dict_conn(db_path) as conn:
+            value = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+        assert value == 1
+
+    def test_create_job_item_rejects_unknown_parent_job(self, tmp_path):
+        db_path = str(tmp_path / "test.db")
+        init_db(db_path)
+        from mas.tools.db_manager import _connect  # local import for test-only verification
+
+        with _connect(db_path) as conn:
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(
+                    """
+                    INSERT INTO job_items (
+                        job_id, item_index, correlation_id, submission_path, rubric_path,
+                        status, attempts, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "missing-job",
+                        0,
+                        "c1",
+                        "submission.txt",
+                        "rubric.json",
+                        "queued",
+                        0,
+                        "2026-01-01T00:00:00+00:00",
+                        "2026-01-01T00:00:00+00:00",
+                    ),
+                )
 
 
 # ── historical_agent tests ────────────────────────────────────────────────────

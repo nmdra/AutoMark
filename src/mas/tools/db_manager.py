@@ -32,8 +32,15 @@ def _utc_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-def _dict_conn(db_path: str) -> sqlite3.Connection:
+def _connect(db_path: str) -> sqlite3.Connection:
+    """Return a SQLite connection with required PRAGMAs applied."""
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def _dict_conn(db_path: str) -> sqlite3.Connection:
+    conn = _connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -57,7 +64,7 @@ def init_db(db_path: str) -> None:
         automatically.
     """
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             """
@@ -191,7 +198,7 @@ def save_report(
         "grade": grade,
     }
     init_db(db_path)
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         conn.execute(
             "INSERT INTO reports (student_id, session_id, timestamp, report_json) "
             "VALUES (?, ?, ?, ?)",
@@ -223,7 +230,7 @@ def get_past_reports(db_path: str, student_id: str) -> list[dict[str, Any]]:
     if not Path(db_path).exists():
         return []
 
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         rows = conn.execute(
             "SELECT session_id, timestamp, report_json "
             "FROM reports WHERE student_id = ? ORDER BY id ASC",
@@ -252,7 +259,7 @@ def create_job(
     """Create a new async grading job and its item rows."""
     init_db(db_path)
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         conn.execute(
             """
             INSERT INTO jobs (
@@ -462,7 +469,7 @@ def refresh_job_progress(db_path: str, job_id: str) -> dict[str, int]:
 def mark_job_running(db_path: str, job_id: str) -> bool:
     """Transition a queued job to running."""
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         row = conn.execute(
             """
             UPDATE jobs
@@ -478,7 +485,7 @@ def mark_job_running(db_path: str, job_id: str) -> bool:
 def mark_job_failed(db_path: str, job_id: str, error: str) -> None:
     """Mark job as failed with an error message."""
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         conn.execute(
             """
             UPDATE jobs
@@ -514,7 +521,7 @@ def mark_job_failed(db_path: str, job_id: str, error: str) -> None:
 def request_job_cancel(db_path: str, job_id: str) -> bool:
     """Request cancellation for a queued or running job."""
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         row = conn.execute(
             """
             UPDATE jobs
@@ -542,7 +549,7 @@ def is_job_cancel_requested(db_path: str, job_id: str) -> bool:
 def mark_remaining_items_cancelled(db_path: str, job_id: str) -> int:
     """Cancel all queued items for a job."""
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         row = conn.execute(
             """
             UPDATE job_items
@@ -558,7 +565,7 @@ def mark_remaining_items_cancelled(db_path: str, job_id: str) -> int:
 def mark_job_item_running(db_path: str, item_id: int) -> bool:
     """Mark a queued item as running and increment attempts."""
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         row = conn.execute(
             """
             UPDATE job_items
@@ -578,7 +585,7 @@ def mark_job_item_completed(
 ) -> None:
     """Persist a completed item result."""
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         conn.execute(
             """
             UPDATE job_items
@@ -622,7 +629,7 @@ def mark_job_item_completed(
 def mark_job_item_failed(db_path: str, item_id: int, error: str) -> None:
     """Mark an item as failed."""
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         conn.execute(
             """
             UPDATE job_items
@@ -645,7 +652,7 @@ def save_job_artifact(
     """Insert or replace a generated export artifact row."""
     init_db(db_path)
     now = _utc_now()
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         conn.execute(
             """
             INSERT INTO job_artifacts (artifact_id, job_id, format, file_path, size_bytes, created_at)
