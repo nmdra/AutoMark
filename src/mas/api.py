@@ -763,14 +763,21 @@ async def grade_batch(request: BatchGradeRequest) -> BatchGradeAcceptedResponse:
             _job_queue.enqueue(job_id)
         except RuntimeError as exc:
             queue_full_error = "Job queue is full. Try again later."
+            persisted_items = get_job_items(settings.db_path, job_id)
+            item_ids_by_index = {
+                persisted_item["item_index"]: persisted_item["id"]
+                for persisted_item in persisted_items
+                if persisted_item.get("item_index") is not None and persisted_item.get("id") is not None
+            }
             for queued_item in items_for_db:
                 if queued_item["status"] == ITEM_STATUS_QUEUED:
-                    mark_job_item_failed(
-                        settings.db_path,
-                        job_id,
-                        queued_item["item_index"],
-                        queue_full_error,
-                    )
+                    item_id = item_ids_by_index.get(queued_item["item_index"])
+                    if item_id is not None:
+                        mark_job_item_failed(
+                            settings.db_path,
+                            item_id,
+                            queue_full_error,
+                        )
             mark_job_failed(
                 settings.db_path,
                 job_id,
