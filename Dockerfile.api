@@ -1,20 +1,44 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Install build tools needed by some transitive dependencies
+# Build tools are only needed in the builder stage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency manifest and install project (with API extras)
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
-RUN pip install --no-cache-dir -e ".[dev]"
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install .
 
-# Ensure the output directory exists
-RUN mkdir -p /app/output
+FROM python:3.11-slim
+
+ARG APP_UID=1000
+ARG APP_GID=1000
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+RUN addgroup --gid "${APP_GID}" app \
+    && adduser --uid "${APP_UID}" --gid "${APP_GID}" --disabled-password --gecos "" app \
+    && mkdir -p /app/output /app/data \
+    && chown app:app /app/output /app/data
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=app:app src/ ./src/
+
+USER app
 
 EXPOSE 8000
 
