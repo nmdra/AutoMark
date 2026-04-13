@@ -23,7 +23,7 @@ from mas.tools.db_manager import (
 )
 
 
-def _set_setting(name: str, value):
+def _override_frozen_setting(name: str, value):
     object.__setattr__(api.settings, name, value)
 
 
@@ -34,11 +34,11 @@ def _make_client(tmp_path):
     data_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    _set_setting("db_path", str(db_path))
-    _set_setting("output_path", str(out_dir / "feedback_report.md"))
-    _set_setting("batch_max_items", 100)
-    _set_setting("job_max_retries", 1)
-    _set_setting("export_max_bytes", 10_485_760)
+    _override_frozen_setting("db_path", str(db_path))
+    _override_frozen_setting("output_path", str(out_dir / "feedback_report.md"))
+    _override_frozen_setting("batch_max_items", 100)
+    _override_frozen_setting("job_max_retries", 1)
+    _override_frozen_setting("export_max_bytes", 10_485_760)
 
     api._DATA_BASE_DIR = data_dir.resolve()
     api._OUTPUT_DIR = out_dir.resolve()

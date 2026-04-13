@@ -587,7 +587,10 @@ class _JobQueueManager:
             self._workers.append(worker)
 
     def enqueue(self, job_id: str) -> None:
-        self._queue.put_nowait(job_id)
+        try:
+            self._queue.put_nowait(job_id)
+        except Full as exc:
+            raise RuntimeError("Job queue is at capacity.") from exc
 
     def _worker_loop(self) -> None:
         while True:
@@ -746,7 +749,7 @@ async def grade_batch(request: BatchGradeRequest) -> BatchGradeAcceptedResponse:
     if accepted > 0:
         try:
             _job_queue.enqueue(job_id)
-        except Full as exc:
+        except RuntimeError as exc:
             mark_job_failed(
                 settings.db_path,
                 job_id,
@@ -863,13 +866,18 @@ async def generate_job_export(job_id: str, export_format: ExportFormat) -> JobAr
         size_bytes=len(content),
     )
     artifact = get_job_artifact(settings.db_path, job_id, export_format.value)
+    if not artifact:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load saved export artifact metadata.",
+        )
     return JobArtifactResponse(
-        artifact_id=artifact["artifact_id"],  # type: ignore[index]
-        job_id=artifact["job_id"],  # type: ignore[index]
-        format=ExportFormat(artifact["format"]),  # type: ignore[index]
-        file_path=artifact["file_path"],  # type: ignore[index]
-        size_bytes=artifact["size_bytes"],  # type: ignore[index]
-        created_at=artifact["created_at"],  # type: ignore[index]
+        artifact_id=artifact["artifact_id"],
+        job_id=artifact["job_id"],
+        format=ExportFormat(artifact["format"]),
+        file_path=artifact["file_path"],
+        size_bytes=artifact["size_bytes"],
+        created_at=artifact["created_at"],
     )
 
 
@@ -889,7 +897,10 @@ async def download_job_export(job_id: str, export_format: ExportFormat) -> FileR
     try:
         resolved_path.relative_to(_EXPORT_DIR.resolve())
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid artifact path.") from exc
+        raise HTTPException(
+            status_code=400,
+            detail="Artifact path is outside the allowed export directory.",
+        ) from exc
     if not resolved_path.exists():
         raise HTTPException(status_code=404, detail="Artifact file does not exist on disk.")
     media_type = {
