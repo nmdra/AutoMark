@@ -77,6 +77,30 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.pdf_regex_fast_path_enabled is True
 
+    def test_default_job_worker_concurrency(self):
+        s = _reload_settings({})
+        assert s.job_worker_concurrency == 2
+
+    def test_default_job_queue_max_size(self):
+        s = _reload_settings({})
+        assert s.job_queue_max_size == 100
+
+    def test_default_job_max_retries(self):
+        s = _reload_settings({})
+        assert s.job_max_retries == 1
+
+    def test_default_batch_max_items(self):
+        s = _reload_settings({})
+        assert s.batch_max_items == 100
+
+    def test_default_job_retention_days(self):
+        s = _reload_settings({})
+        assert s.job_retention_days == 30
+
+    def test_default_export_max_bytes(self):
+        s = _reload_settings({})
+        assert s.export_max_bytes == 10485760
+
     def test_default_db_path_contains_data_directory(self):
         s = _reload_settings({})
         assert "data" in s.db_path
@@ -166,6 +190,30 @@ class TestSettingsEnvOverrides:
         s = _reload_settings({"AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED": "false"})
         assert s.pdf_regex_fast_path_enabled is False
 
+    def test_job_worker_concurrency_override(self):
+        s = _reload_settings({"AUTOMARK_JOB_WORKER_CONCURRENCY": "4"})
+        assert s.job_worker_concurrency == 4
+
+    def test_job_queue_max_size_override(self):
+        s = _reload_settings({"AUTOMARK_JOB_QUEUE_MAX_SIZE": "250"})
+        assert s.job_queue_max_size == 250
+
+    def test_job_max_retries_override(self):
+        s = _reload_settings({"AUTOMARK_JOB_MAX_RETRIES": "3"})
+        assert s.job_max_retries == 3
+
+    def test_batch_max_items_override(self):
+        s = _reload_settings({"AUTOMARK_BATCH_MAX_ITEMS": "40"})
+        assert s.batch_max_items == 40
+
+    def test_job_retention_days_override(self):
+        s = _reload_settings({"AUTOMARK_JOB_RETENTION_DAYS": "7"})
+        assert s.job_retention_days == 7
+
+    def test_export_max_bytes_override(self):
+        s = _reload_settings({"AUTOMARK_EXPORT_MAX_BYTES": "2048"})
+        assert s.export_max_bytes == 2048
+
     def test_empty_env_var_falls_back_to_default(self):
         s = _reload_settings({"AUTOMARK_ANALYSIS_MODEL_NAME": ""})
         assert s.analysis_model_name == "phi4-mini:3.8b-q4_K_M"
@@ -220,5 +268,11 @@ class TestModuleSingleton:
             "submission_max_chars",
             "min_reports_for_insights",
             "pdf_regex_fast_path_enabled",
+            "job_worker_concurrency",
+            "job_queue_max_size",
+            "job_max_retries",
+            "batch_max_items",
+            "job_retention_days",
+            "export_max_bytes",
         ):
             assert hasattr(settings, field)

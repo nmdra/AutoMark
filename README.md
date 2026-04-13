@@ -217,6 +217,12 @@ Settings are loaded from environment variables (or a `.env` file in the project 
 | `AUTOMARK_MARKING_SHEET_PATH` | `output/marking_sheet.md` | Default marking sheet path |
 | `AUTOMARK_ANALYSIS_REPORT_PATH` | `output/analysis_report.md` | Default analysis report path |
 | `AUTOMARK_DATA_BASE_DIR` | `<project_root>/data` | Base directory for submission/rubric files (API path-traversal guard) |
+| `AUTOMARK_JOB_WORKER_CONCURRENCY` | `2` | Worker threads for async batch jobs |
+| `AUTOMARK_JOB_QUEUE_MAX_SIZE` | `100` | Max queued batch jobs in memory |
+| `AUTOMARK_JOB_MAX_RETRIES` | `1` | Default retries per batch item |
+| `AUTOMARK_BATCH_MAX_ITEMS` | `100` | Max items accepted per batch request |
+| `AUTOMARK_JOB_RETENTION_DAYS` | `30` | Suggested retention period for completed jobs |
+| `AUTOMARK_EXPORT_MAX_BYTES` | `10485760` | Max allowed CSV/JSON/PDF export size (bytes) |
 
 ---
 
@@ -238,6 +244,12 @@ The interactive API docs are available at [http://localhost:8000/docs](http://lo
 |---|---|---|
 | `GET` | `/health` | Liveness check |
 | `POST` | `/grade` | Run the grading pipeline |
+| `POST` | `/grade/batch` | Submit asynchronous batch grading job |
+| `GET` | `/jobs` | List async jobs (supports status, limit, offset) |
+| `GET` | `/jobs/{job_id}` | Get full job status with per-item results |
+| `POST` | `/jobs/{job_id}/cancel` | Cancel queued/running job |
+| `POST` | `/jobs/{job_id}/exports/{format}` | Generate CSV/JSON/PDF export for completed job |
+| `GET` | `/jobs/{job_id}/exports/{format}` | Download previously generated export |
 | `GET` | `/sessions/{session_id}/logs` | Retrieve trace log entries for a session |
 
 **Example grading request:**
@@ -249,6 +261,23 @@ curl -X POST http://localhost:8000/grade \
 ```
 
 Both paths are resolved relative to `AUTOMARK_DATA_BASE_DIR` (default: `data/`). Path traversal is blocked.
+
+**Example batch request:**
+
+```bash
+curl -X POST http://localhost:8000/grade/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"submission_path": "submission.txt", "rubric_path": "rubric.json", "correlation_id": "s1"},
+      {"submission_path": "submission2.txt", "rubric_path": "rubric.json", "correlation_id": "s2"}
+    ],
+    "max_retries": 1
+  }'
+```
+
+Then poll `GET /jobs/{job_id}` for status/progress and use
+`POST /jobs/{job_id}/exports/{format}` (`csv`, `json`, or `pdf`) to build downloadable artifacts.
 
 **Example response (abbreviated):**
 
