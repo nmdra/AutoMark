@@ -85,6 +85,30 @@ AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED
     model-based extractor.
     Default: ``true``
 
+AUTOMARK_JOB_WORKER_CONCURRENCY
+    Number of in-process worker threads that process queued batch jobs.
+    Default: ``2``
+
+AUTOMARK_JOB_QUEUE_MAX_SIZE
+    Maximum number of queued batch jobs waiting for worker pickup.
+    Default: ``100``
+
+AUTOMARK_JOB_MAX_RETRIES
+    Default retry attempts per batch item after a grading failure.
+    Default: ``1``
+
+AUTOMARK_BATCH_MAX_ITEMS
+    Maximum number of submissions accepted in a single batch request.
+    Default: ``100``
+
+AUTOMARK_JOB_RETENTION_DAYS
+    Suggested retention period (days) for completed job metadata/artifacts.
+    Default: ``30``
+
+AUTOMARK_EXPORT_MAX_BYTES
+    Maximum allowed generated export artifact size in bytes.
+    Default: ``10485760`` (10 MiB)
+
 Ollama parallel-request note
 -----------------------------
 The finalize agent runs the historical-insights LLM call (light model) and
@@ -140,6 +164,12 @@ class Settings:
     submission_max_chars: int
     min_reports_for_insights: int
     pdf_regex_fast_path_enabled: bool
+    job_worker_concurrency: int
+    job_queue_max_size: int
+    job_max_retries: int
+    batch_max_items: int
+    job_retention_days: int
+    export_max_bytes: int
 
 
 def _load_settings() -> Settings:
@@ -180,6 +210,12 @@ def _load_settings() -> Settings:
         pdf_regex_fast_path_enabled=_env(
             "AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED", "true"
         ).lower() not in ("false", "0", "no"),
+        job_worker_concurrency=int(_env("AUTOMARK_JOB_WORKER_CONCURRENCY", "2")),
+        job_queue_max_size=int(_env("AUTOMARK_JOB_QUEUE_MAX_SIZE", "100")),
+        job_max_retries=int(_env("AUTOMARK_JOB_MAX_RETRIES", "1")),
+        batch_max_items=int(_env("AUTOMARK_BATCH_MAX_ITEMS", "100")),
+        job_retention_days=int(_env("AUTOMARK_JOB_RETENTION_DAYS", "30")),
+        export_max_bytes=int(_env("AUTOMARK_EXPORT_MAX_BYTES", "10485760")),
     )
 
 
