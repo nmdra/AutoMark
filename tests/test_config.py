@@ -76,6 +76,26 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.submission_max_chars == 8000
 
+    def test_default_prompt_cache_enabled(self):
+        s = _reload_settings({})
+        assert s.prompt_cache_enabled is True
+
+    def test_default_prompt_cache_max_entries(self):
+        s = _reload_settings({})
+        assert s.prompt_cache_max_entries == 32
+
+    def test_default_prompt_cache_ttl_seconds(self):
+        s = _reload_settings({})
+        assert s.prompt_cache_ttl_seconds == 1800
+
+    def test_default_analysis_system_prompt_version(self):
+        s = _reload_settings({})
+        assert s.analysis_system_prompt_version == "v1"
+
+    def test_default_rubric_descriptor_max_chars(self):
+        s = _reload_settings({})
+        assert s.rubric_descriptor_max_chars == 160
+
     def test_default_min_reports_for_insights(self):
         s = _reload_settings({})
         assert s.min_reports_for_insights == 1
@@ -195,6 +215,26 @@ class TestSettingsEnvOverrides:
         s = _reload_settings({"AUTOMARK_SUBMISSION_MAX_CHARS": "4000"})
         assert s.submission_max_chars == 4000
 
+    def test_prompt_cache_enabled_false(self):
+        s = _reload_settings({"AUTOMARK_PROMPT_CACHE_ENABLED": "false"})
+        assert s.prompt_cache_enabled is False
+
+    def test_prompt_cache_max_entries_override(self):
+        s = _reload_settings({"AUTOMARK_PROMPT_CACHE_MAX_ENTRIES": "10"})
+        assert s.prompt_cache_max_entries == 10
+
+    def test_prompt_cache_ttl_seconds_override(self):
+        s = _reload_settings({"AUTOMARK_PROMPT_CACHE_TTL_SECONDS": "90"})
+        assert s.prompt_cache_ttl_seconds == 90
+
+    def test_analysis_system_prompt_version_override(self):
+        s = _reload_settings({"AUTOMARK_ANALYSIS_SYSTEM_PROMPT_VERSION": "v2"})
+        assert s.analysis_system_prompt_version == "v2"
+
+    def test_rubric_descriptor_max_chars_override(self):
+        s = _reload_settings({"AUTOMARK_RUBRIC_DESCRIPTOR_MAX_CHARS": "80"})
+        assert s.rubric_descriptor_max_chars == 80
+
     def test_min_reports_for_insights_override(self):
         s = _reload_settings({"AUTOMARK_MIN_REPORTS_FOR_INSIGHTS": "2"})
         assert s.min_reports_for_insights == 2
@@ -280,6 +320,11 @@ class TestModuleSingleton:
             "num_predict",
             "llm_report_enabled",
             "submission_max_chars",
+            "prompt_cache_enabled",
+            "prompt_cache_max_entries",
+            "prompt_cache_ttl_seconds",
+            "analysis_system_prompt_version",
+            "rubric_descriptor_max_chars",
             "min_reports_for_insights",
             "pdf_regex_fast_path_enabled",
             "job_worker_concurrency",

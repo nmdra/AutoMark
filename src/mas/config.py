@@ -83,6 +83,30 @@ AUTOMARK_SUBMISSION_MAX_CHARS
     Longer text is truncated before the prompt is built, reducing context size.
     Default: ``8000``
 
+AUTOMARK_PROMPT_CACHE_ENABLED
+    Set to ``false`` to disable Ollama prompt-prefix context reuse and always
+    use the standard ChatOllama structured-output call path.
+    Default: ``true``
+
+AUTOMARK_PROMPT_CACHE_MAX_ENTRIES
+    Maximum number of warmed rubric/system prompt-prefix contexts kept in
+    memory per process.
+    Default: ``32``
+
+AUTOMARK_PROMPT_CACHE_TTL_SECONDS
+    Time-to-live in seconds for each warmed prompt-prefix context cache entry.
+    Default: ``1800``
+
+AUTOMARK_ANALYSIS_SYSTEM_PROMPT_VERSION
+    Version tag included in the prompt-prefix cache key so instruction updates
+    can force cache invalidation without changing code paths.
+    Default: ``v1``
+
+AUTOMARK_RUBRIC_DESCRIPTOR_MAX_CHARS
+    Maximum characters retained for each rubric criterion descriptor in the
+    compact rubric payload sent to the analysis model.
+    Default: ``160``
+
 AUTOMARK_MIN_REPORTS_FOR_INSIGHTS
     Minimum number of *past* reports required before the historical-insights
     LLM call is made.  Set to ``2`` to require at least two prior sessions
@@ -174,6 +198,11 @@ class Settings:
     num_predict: int
     llm_report_enabled: bool
     submission_max_chars: int
+    prompt_cache_enabled: bool
+    prompt_cache_max_entries: int
+    prompt_cache_ttl_seconds: int
+    analysis_system_prompt_version: str
+    rubric_descriptor_max_chars: int
     min_reports_for_insights: int
     pdf_regex_fast_path_enabled: bool
     job_worker_concurrency: int
@@ -220,6 +249,17 @@ def _load_settings() -> Settings:
             "AUTOMARK_LLM_REPORT_ENABLED", "true"
         ).lower() not in ("false", "0", "no"),
         submission_max_chars=int(_env("AUTOMARK_SUBMISSION_MAX_CHARS", "8000")),
+        prompt_cache_enabled=_env(
+            "AUTOMARK_PROMPT_CACHE_ENABLED", "true"
+        ).lower() not in ("false", "0", "no"),
+        prompt_cache_max_entries=int(_env("AUTOMARK_PROMPT_CACHE_MAX_ENTRIES", "32")),
+        prompt_cache_ttl_seconds=int(_env("AUTOMARK_PROMPT_CACHE_TTL_SECONDS", "1800")),
+        analysis_system_prompt_version=_env(
+            "AUTOMARK_ANALYSIS_SYSTEM_PROMPT_VERSION", "v1"
+        ),
+        rubric_descriptor_max_chars=int(
+            _env("AUTOMARK_RUBRIC_DESCRIPTOR_MAX_CHARS", "160")
+        ),
         min_reports_for_insights=int(
             _env("AUTOMARK_MIN_REPORTS_FOR_INSIGHTS", "1")
         ),

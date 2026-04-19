@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import sys
+import threading
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
+from statistics import median
 from time import perf_counter
 from typing import Any
 
@@ -18,6 +21,14 @@ _CONSOLE_RENDERER = structlog.dev.ConsoleRenderer(
     colors=True,
     pad_event_to=30,
     sort_keys=False,
+)
+_METRICS_LOCK = threading.Lock()
+_MEDIAN_WINDOW_SIZE = 100
+_LATENCY_WINDOWS: dict[tuple[str, str, str], deque[float]] = defaultdict(
+    lambda: deque(maxlen=_MEDIAN_WINDOW_SIZE)
+)
+_TOKEN_WINDOWS: dict[tuple[str, str, str], deque[int]] = defaultdict(
+    lambda: deque(maxlen=_MEDIAN_WINDOW_SIZE)
 )
 
 
@@ -144,6 +155,7 @@ def log_model_call(
     status: str,
     response: Any = None,
     error: str = "",
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Record one model invocation as a structured JSON log entry."""
     tokens = _extract_token_usage(response)
@@ -154,6 +166,17 @@ def log_model_call(
         else None
     )
     resolved_model = str(response_model or model)
+    metrics_key = (str(service), str(task_type), resolved_model)
+    with _METRICS_LOCK:
+        _LATENCY_WINDOWS[metrics_key].append(float(latency_ms))
+        if isinstance(tokens["total_tokens"], int):
+            _TOKEN_WINDOWS[metrics_key].append(tokens["total_tokens"])
+        median_latency_ms = float(median(_LATENCY_WINDOWS[metrics_key]))
+        median_total_tokens = (
+            int(median(_TOKEN_WINDOWS[metrics_key]))
+            if _TOKEN_WINDOWS[metrics_key]
+            else None
+        )
 
     entry: dict[str, Any] = {
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
@@ -172,8 +195,15 @@ def log_model_call(
             "task_type": str(task_type),
             "latency_ms": round(latency_ms, 2),
             "tokens": tokens,
+            "median_latency_ms": round(median_latency_ms, 2),
+            "median_total_tokens": median_total_tokens,
         },
     }
+    if metadata:
+        entry["details"]["metadata"] = metadata
+        for key, value in metadata.items():
+            if isinstance(value, bool | int | float | str):
+                entry[key] = value
     if error:
         entry["error"] = error
         entry["details"]["error"] = error
@@ -197,6 +227,7 @@ def timed_model_call(
     try:
         response = llm.invoke(messages)
     except Exception as exc:
+        response_metadata = getattr(response, "model_call_metadata", None)
         log_model_call(
             session_id=session_id,
             service=service,
@@ -206,9 +237,11 @@ def timed_model_call(
             status="error",
             response=response,
             error=str(exc),
+            metadata=response_metadata if isinstance(response_metadata, dict) else None,
         )
         raise
 
+    response_metadata = getattr(response, "model_call_metadata", None)
     log_model_call(
         session_id=session_id,
         service=service,
@@ -217,5 +250,6 @@ def timed_model_call(
         latency_ms=(perf_counter() - started) * 1000,
         status="success",
         response=response,
+        metadata=response_metadata if isinstance(response_metadata, dict) else None,
     )
     return response

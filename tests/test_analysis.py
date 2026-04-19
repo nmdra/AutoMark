@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import mas.agents.analysis as analysis_module
 from mas.agents.analysis import CriterionScore, RubricScores, analysis_agent
 from mas.state import AgentState
 
@@ -49,6 +51,15 @@ def _mock_llm_output() -> RubricScores:
                 justification="Writing is mostly clear.",
             ),
         ]
+    )
+
+
+@pytest.fixture(autouse=True)
+def _disable_prompt_cache_for_existing_tests(monkeypatch):
+    monkeypatch.setattr(
+        analysis_module,
+        "settings",
+        replace(analysis_module.settings, prompt_cache_enabled=False),
     )
 
 
@@ -216,3 +227,64 @@ class TestAnalysisAgent:
 
         c1 = next(c for c in result["scored_criteria"] if c["criterion_id"] == "C1")
         assert c1["assignment_mistake"] == "none"
+
+    def test_repeated_grading_same_rubric_uses_cached_prefix_and_same_scoring(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            analysis_module,
+            "settings",
+            replace(analysis_module.settings, prompt_cache_enabled=True),
+        )
+
+        class FakePrefixResponse:
+            def __init__(self, call_index: int) -> None:
+                self.content = json.dumps(
+                    {
+                        "scores": [
+                            {
+                                "criterion_id": "C1",
+                                "score": 4,
+                                "assignment_mistake": "none",
+                                "justification": "Good definition provided.",
+                            },
+                            {
+                                "criterion_id": "C2",
+                                "score": 3,
+                                "assignment_mistake": "none",
+                                "justification": "Writing is mostly clear.",
+                            },
+                        ]
+                    }
+                )
+                self.usage_metadata = {"input_tokens": 20, "output_tokens": 12}
+                self.response_metadata = {"model": "phi4-mini"}
+                self.model_call_metadata = {
+                    "cache_hit": call_index > 0,
+                    "cache_status": "hit" if call_index > 0 else "miss",
+                    "warmup_ms": 0.0 if call_index > 0 else 15.0,
+                    "analysis_latency_ms": 22.0,
+                }
+
+        class FakePrefixClient:
+            def __init__(self):
+                self.calls = 0
+
+            def invoke(self, messages):
+                response = FakePrefixResponse(self.calls)
+                self.calls += 1
+                return response
+
+        fake_client = FakePrefixClient()
+        monkeypatch.setattr(
+            analysis_module,
+            "get_analysis_prefix_cached_json_llm",
+            lambda **_: fake_client,
+        )
+
+        first = analysis_agent(_make_state())
+        second = analysis_agent(_make_state())
+
+        assert first["total_score"] == second["total_score"] == 7
+        assert first["scored_criteria"] == second["scored_criteria"]
+        assert fake_client.calls == 2

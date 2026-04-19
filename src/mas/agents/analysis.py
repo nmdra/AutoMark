@@ -8,9 +8,10 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from mas.llm import get_json_llm
+from mas.llm import get_analysis_prefix_cached_json_llm, get_json_llm
 from mas.state import AgentState
 from mas.tools.logger import log_agent_action, timed_model_call
+from mas.tools.prompt_cache import hash_rubric_payload
 from mas.tools.score_calculator import calculate_total_score
 from mas.config import settings
 
@@ -52,17 +53,56 @@ def _build_system_prompt() -> str:
     )
 
 
-def _build_user_prompt(submission_text: str, rubric_data: dict[str, Any]) -> str:
+def _compact_criteria(rubric_data: dict[str, Any]) -> list[dict[str, Any]]:
+    max_descriptor_chars = settings.rubric_descriptor_max_chars
+    compact: list[dict[str, Any]] = []
+    for criterion in rubric_data.get("criteria", []):
+        descriptor = str(criterion.get("description") or "").strip()
+        if len(descriptor) > max_descriptor_chars:
+            descriptor = descriptor[:max_descriptor_chars].rstrip() + "…"
+        compact.append(
+            {
+                "id": str(criterion.get("id") or ""),
+                "name": str(criterion.get("name") or ""),
+                "max_score": int(criterion.get("max_score") or 0),
+                "descriptor": descriptor,
+            }
+        )
+    return compact
+
+
+def _build_prefix_context(rubric_data: dict[str, Any]) -> str:
+    compact_payload = {
+        "total_marks": int(rubric_data.get("total_marks") or 0),
+        "criteria": _compact_criteria(rubric_data),
+    }
+    return (
+        "## Rubric Criteria\n\n"
+        f"{json.dumps(compact_payload['criteria'], indent=2)}\n\n"
+        "Use these criteria exactly as provided."
+    )
+
+
+def _build_submission_prompt(submission_text: str) -> str:
     # Truncate to avoid bloating the context window with very long submissions.
     max_chars = settings.submission_max_chars
     if len(submission_text) > max_chars:
         submission_text = submission_text[:max_chars] + "\n\n[...truncated...]"
-    criteria_summary = json.dumps(rubric_data.get("criteria", []), indent=2)
     return (
         f"## Student Submission\n\n{submission_text}\n\n"
-        f"## Rubric Criteria\n\n{criteria_summary}\n\n"
         "Score each criterion and provide a one-sentence justification."
     )
+
+
+def _parse_scoring_response(raw_response: Any) -> RubricScores:
+    if isinstance(raw_response, RubricScores):
+        return raw_response
+    if isinstance(raw_response, BaseModel):
+        return RubricScores.model_validate(raw_response.model_dump())
+    if isinstance(raw_response, dict):
+        return RubricScores.model_validate(raw_response)
+    content = str(getattr(raw_response, "content", "") or "")
+    return RubricScores.model_validate_json(content)
 
 
 def analysis_agent(state: AgentState) -> dict:
@@ -82,15 +122,33 @@ def analysis_agent(state: AgentState) -> dict:
         "submission_length": len(submission_text),
     }
 
-    llm = get_json_llm(schema=RubricScores)
-
-    messages = [
-        SystemMessage(content=_build_system_prompt()),
-        HumanMessage(content=_build_user_prompt(submission_text, rubric_data)),
-    ]
+    system_prompt = _build_system_prompt()
+    prefix_context = _build_prefix_context(rubric_data)
+    submission_prompt = _build_submission_prompt(submission_text)
+    compact_rubric_payload = {
+        "total_marks": int(rubric_data.get("total_marks") or 0),
+        "criteria": _compact_criteria(rubric_data),
+    }
+    rubric_hash = hash_rubric_payload(compact_rubric_payload)
 
     try:
-        result: RubricScores = timed_model_call(
+        if settings.prompt_cache_enabled:
+            llm = get_analysis_prefix_cached_json_llm(
+                system_prompt=system_prompt,
+                system_prompt_version=settings.analysis_system_prompt_version,
+                rubric_hash=rubric_hash,
+                prefix_context=prefix_context,
+                submission_prompt=submission_prompt,
+            )
+            messages: list[Any] = []
+        else:
+            llm = get_json_llm(schema=RubricScores)
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prefix_context + "\n\n" + submission_prompt),
+            ]
+
+        result = timed_model_call(
             llm=llm,
             messages=messages,
             session_id=session_id,
@@ -98,18 +156,46 @@ def analysis_agent(state: AgentState) -> dict:
             task_type="rubric_scoring",
             model=settings.analysis_model_name,
         )
-        llm_scores: list[CriterionScore] = result.scores
+        llm_scores = _parse_scoring_response(result).scores
     except Exception as exc:
         # Fallback: assign 0 for all criteria
-        llm_scores = [
-            CriterionScore(
-                criterion_id=c["id"],
-                score=0,
-                justification="LLM evaluation failed; score defaulted to 0.",
-            )
-            for c in criteria
-        ]
-        state_error = str(exc)
+        if settings.prompt_cache_enabled:
+            try:
+                fallback_llm = get_json_llm(schema=RubricScores)
+                fallback_messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=prefix_context + "\n\n" + submission_prompt),
+                ]
+                fallback_result = timed_model_call(
+                    llm=fallback_llm,
+                    messages=fallback_messages,
+                    session_id=session_id,
+                    service="analysis",
+                    task_type="rubric_scoring_fallback",
+                    model=settings.analysis_model_name,
+                )
+                llm_scores = _parse_scoring_response(fallback_result).scores
+                state_error = ""
+            except Exception as fallback_exc:
+                llm_scores = [
+                    CriterionScore(
+                        criterion_id=c["id"],
+                        score=0,
+                        justification="LLM evaluation failed; score defaulted to 0.",
+                    )
+                    for c in criteria
+                ]
+                state_error = f"{exc} | fallback failed: {fallback_exc}"
+        else:
+            llm_scores = [
+                CriterionScore(
+                    criterion_id=c["id"],
+                    score=0,
+                    justification="LLM evaluation failed; score defaulted to 0.",
+                )
+                for c in criteria
+            ]
+            state_error = str(exc)
     else:
         state_error = ""
 
