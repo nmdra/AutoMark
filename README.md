@@ -459,3 +459,20 @@ Make sure the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/clou
 
 **Database not initialised**
 Run `make init-db` before the first grading run to create `data/students.db`.
+
+---
+
+## Citation
+
+If you use the metadata extractor model, please cite:
+
+```bibtex
+@misc{nimendra_2026,
+	author       = { Nimendra },
+	title        = { SmolLM2-360M-Assignment-Metadata-Extractor (Revision 0da34e3) },
+	year         = 2026,
+	url          = { https://huggingface.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor },
+	doi          = { 10.57967/hf/8468 },
+	publisher    = { Hugging Face }
+}
+```
