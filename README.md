@@ -68,7 +68,7 @@ If ingestion fails (e.g. missing files), the pipeline short-circuits directly to
 ## Agents
 
 ### Ingestion Agent (`agents/ingestion.py`)
-Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions. Reads the plain-text submission and parses the rubric JSON. Extracts `student_id`, `student_name`, and `assignment_number` using regex fast-path plus the dedicated metadata-extractor model fallback. Sets `ingestion_status` to `"success"` or `"failed"`.
+Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions. Reads the plain-text submission and parses the rubric JSON. Uses the dedicated metadata extractor model to extract `student_id`, `student_name`, and `assignment_number` from the submission text. Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### PDF Ingestion Agent (`agents/pdf_ingestion.py`)
 Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, and always passes that full Markdown to downstream scoring/reporting. A dedicated metadata extractor model (default: `hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M`) is used for extracting student metadata (`student_id`, `student_name`, `assignment_number`) from a compact metadata-focused prompt. Sets `ingestion_status` to `"success"` or `"failed"`.
