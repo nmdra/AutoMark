@@ -13,6 +13,7 @@ from mas.agents.pdf_ingestion import (
     _build_extraction_prompt,
     _regex_extract_student_id,
     _regex_extract_student_name,
+    _regex_extract_assignment_number,
     pdf_ingestion_agent,
 )
 from mas.state import AgentState
@@ -54,29 +55,37 @@ def _fake_pdf(tmp_path: Path, name: str = "submission.pdf") -> Path:
 
 
 class TestBuildExtractionPrompt:
-    def test_contains_student_id_instruction(self):
+    def test_contains_instruction_header(self):
         prompt = _build_extraction_prompt("some text")
-        assert "student_id" in prompt.lower()
+        assert "### instruction:" in prompt.lower()
 
-    def test_contains_student_name_instruction(self):
+    def test_contains_input_header(self):
         prompt = _build_extraction_prompt("some text")
-        assert "student_name" in prompt.lower()
+        assert "### input:" in prompt.lower()
+
+    def test_contains_response_header(self):
+        prompt = _build_extraction_prompt("some text")
+        assert "### response:" in prompt.lower()
 
     def test_contains_markdown_text(self):
         prompt = _build_extraction_prompt("my submission here")
         assert "my submission here" in prompt
 
-    def test_does_not_request_submission_text_extraction(self):
+    def test_does_not_include_extra_instructions(self):
         prompt = _build_extraction_prompt("some text")
-        assert "submission_text" not in prompt.lower()
+        assert "here is the json" not in prompt.lower()
 
 
 class TestBuildMetadataContext:
     def test_keeps_identity_lines(self):
-        text = "Body line\nStudent ID: IT21000001\nStudent Name: Alice Smith\nMore body"
+        text = (
+            "Body line\nStudent ID: IT21000001\nStudent Name: Alice Smith\n"
+            "Assignment No: 4\nMore body"
+        )
         context = _build_metadata_context(text)
         assert "Student ID: IT21000001" in context
         assert "Student Name: Alice Smith" in context
+        assert "Assignment No: 4" in context
 
     def test_truncates_long_markdown_context(self):
         text = "Student ID: IT21000001\n" + ("A" * 3000) + "\nName: Alice"
@@ -119,21 +128,30 @@ class TestRegexExtractors:
     def test_student_name_strips_leading_markdown_asterisks(self):
         assert _regex_extract_student_name("Student Name: ** Jane Smith") == "Jane Smith"
 
+    def test_assignment_number_standard(self):
+        assert _regex_extract_assignment_number("Assignment No: 03") == "03"
+
+    def test_assignment_number_short_form(self):
+        assert _regex_extract_assignment_number("HW-7") == "7"
+
 
 # ── pdf_ingestion_agent ───────────────────────────────────────────────────────
 
 
 class TestPdfIngestionAgent:
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_success_sets_ingestion_status(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
 
-        mock_convert.return_value = "Student ID: S001\nStudent Name: Alice\nContent here."
+        mock_convert.return_value = (
+            "Student ID: S001\nStudent Name: Alice\nAssignment No: 01\nContent here."
+        )
         mock_details = MagicMock()
-        mock_details.student_id = "S001"
+        mock_details.student_number = "S001"
         mock_details.student_name = "Alice"
+        mock_details.assignment_number = "01"
         mock_details.submission_text = "Content here."
         mock_llm.return_value.invoke.return_value = mock_details
 
@@ -141,16 +159,17 @@ class TestPdfIngestionAgent:
 
         assert result["ingestion_status"] == "success"
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_extracts_student_id_and_name(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
 
-        mock_convert.return_value = "Student ID: IT21000042\nContent."
+        mock_convert.return_value = "Student ID: IT21000042\nAssignment No: 2\nContent."
         mock_details = MagicMock()
-        mock_details.student_id = "IT21000042"
+        mock_details.student_number = "IT21000042"
         mock_details.student_name = "Bob Smith"
+        mock_details.assignment_number = "2"
         mock_details.submission_text = "Content."
         mock_llm.return_value.invoke.return_value = mock_details
 
@@ -158,8 +177,9 @@ class TestPdfIngestionAgent:
 
         assert result["student_id"] == "IT21000042"
         assert result["student_name"] == "Bob Smith"
+        assert result["assignment_number"] == "2"
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_submission_text_populated(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -167,8 +187,9 @@ class TestPdfIngestionAgent:
 
         mock_convert.return_value = "Raw markdown."
         mock_details = MagicMock()
-        mock_details.student_id = ""
+        mock_details.student_number = ""
         mock_details.student_name = ""
+        mock_details.assignment_number = ""
         mock_details.submission_text = "Cleaned submission body."
         mock_llm.return_value.invoke.return_value = mock_details
 
@@ -176,7 +197,7 @@ class TestPdfIngestionAgent:
 
         assert result["submission_text"] == "Raw markdown."
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     @patch("mas.agents.pdf_ingestion.settings")
     def test_llm_prompt_uses_compact_metadata_context(
@@ -191,8 +212,9 @@ class TestPdfIngestionAgent:
             + "\nStudent Name: Bob Smith\nTAIL_UNIQUE_TOKEN"
         )
         mock_details = MagicMock()
-        mock_details.student_id = "IT21000042"
+        mock_details.student_number = "IT21000042"
         mock_details.student_name = "Bob Smith"
+        mock_details.assignment_number = "2"
         mock_llm.return_value.invoke.return_value = mock_details
 
         pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
@@ -201,7 +223,7 @@ class TestPdfIngestionAgent:
         user_prompt = messages[1].content
         assert "TAIL_UNIQUE_TOKEN" not in user_prompt
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_rubric_data_loaded(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
@@ -209,8 +231,9 @@ class TestPdfIngestionAgent:
 
         mock_convert.return_value = "Content."
         mock_details = MagicMock()
-        mock_details.student_id = ""
+        mock_details.student_number = ""
         mock_details.student_name = ""
+        mock_details.assignment_number = ""
         mock_details.submission_text = "Content."
         mock_llm.return_value.invoke.return_value = mock_details
 
@@ -251,11 +274,12 @@ class TestPdfIngestionAgent:
         rub = _write_rubric(tmp_path)
 
         with patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown") as mc, \
-             patch("mas.agents.pdf_ingestion.get_light_json_llm") as ml:
+             patch("mas.agents.pdf_ingestion.get_metadata_json_llm") as ml:
             mc.return_value = "Text."
             det = MagicMock()
-            det.student_id = ""
+            det.student_number = ""
             det.student_name = ""
+            det.assignment_number = ""
             det.submission_text = "Text."
             ml.return_value.invoke.return_value = det
             result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
@@ -268,11 +292,12 @@ class TestPdfIngestionAgent:
         rub = _write_rubric(tmp_path)
 
         with patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown") as mc, \
-             patch("mas.agents.pdf_ingestion.get_light_json_llm") as ml:
+             patch("mas.agents.pdf_ingestion.get_metadata_json_llm") as ml:
             mc.return_value = "Text."
             det = MagicMock()
-            det.student_id = ""
+            det.student_number = ""
             det.student_name = ""
+            det.assignment_number = ""
             det.submission_text = "Text."
             ml.return_value.invoke.return_value = det
             result = pdf_ingestion_agent(
@@ -281,15 +306,16 @@ class TestPdfIngestionAgent:
 
         assert result["session_id"] == "my-session"
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_log_entry_appended(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
         mock_convert.return_value = "Text."
         det = MagicMock()
-        det.student_id = ""
+        det.student_number = ""
         det.student_name = ""
+        det.assignment_number = ""
         det.submission_text = "Text."
         mock_llm.return_value.invoke.return_value = det
 
@@ -300,15 +326,16 @@ class TestPdfIngestionAgent:
         assert log["agent"] == "pdf_ingestion"
         assert log["action"] == "ingest_pdf_submission"
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_existing_logs_preserved(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
         mock_convert.return_value = "Text."
         det = MagicMock()
-        det.student_id = ""
+        det.student_number = ""
         det.student_name = ""
+        det.assignment_number = ""
         det.submission_text = "Text."
         mock_llm.return_value.invoke.return_value = det
 
@@ -320,27 +347,28 @@ class TestPdfIngestionAgent:
         assert len(result["agent_logs"]) == 2
         assert result["agent_logs"][0] == prior
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_returns_expected_fields_on_success(self, mock_convert, mock_llm, tmp_path):
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
         mock_convert.return_value = "Text."
         det = MagicMock()
-        det.student_id = "S1"
+        det.student_number = "S1"
         det.student_name = "Alice"
+        det.assignment_number = "1"
         det.submission_text = "Text."
         mock_llm.return_value.invoke.return_value = det
 
         result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
 
         expected = {
-            "session_id", "ingestion_status", "student_id", "student_name",
+            "session_id", "ingestion_status", "student_id", "student_name", "assignment_number",
             "submission_text", "rubric_data", "agent_logs",
         }
         assert set(result.keys()) == expected
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_llm_failure_falls_back_to_raw_markdown(self, mock_convert, mock_llm, tmp_path):
         """When LLM extraction fails, raw markdown is used as submission text."""
@@ -355,16 +383,16 @@ class TestPdfIngestionAgent:
         assert result["ingestion_status"] == "success"
         assert "error" in result
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_regex_fast_path_skips_llm_when_both_fields_found(
         self, mock_convert, mock_llm, tmp_path
     ):
-        """When regex finds both student_id and student_name, the LLM must NOT be called."""
+        """When regex finds all metadata fields, the LLM must NOT be called."""
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
         mock_convert.return_value = (
-            "Student ID: IT21000099\nStudent Name: Jane Doe\nContent here."
+            "Student ID: IT21000099\nStudent Name: Jane Doe\nAssignment No: 02\nContent here."
         )
 
         result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
@@ -372,9 +400,10 @@ class TestPdfIngestionAgent:
         mock_llm.assert_not_called()
         assert result["student_id"] == "IT21000099"
         assert result["student_name"] == "Jane Doe"
+        assert result["assignment_number"] == "02"
         assert result["ingestion_status"] == "success"
 
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_llm_called_when_name_missing_from_markdown(
         self, mock_convert, mock_llm, tmp_path
@@ -385,8 +414,9 @@ class TestPdfIngestionAgent:
         # Only student_id is present; no name line.
         mock_convert.return_value = "Student ID: IT21000042\nContent."
         det = MagicMock()
-        det.student_id = "IT21000042"
+        det.student_number = "IT21000042"
         det.student_name = "Bob Smith"
+        det.assignment_number = "3"
         det.submission_text = "Content."
         mock_llm.return_value.invoke.return_value = det
 
@@ -394,9 +424,10 @@ class TestPdfIngestionAgent:
 
         mock_llm.return_value.invoke.assert_called_once()
         assert result["student_name"] == "Bob Smith"
+        assert result["assignment_number"] == "3"
 
     @patch("mas.agents.pdf_ingestion.settings")
-    @patch("mas.agents.pdf_ingestion.get_light_json_llm")
+    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
     def test_regex_fast_path_can_be_disabled_via_env_setting(
         self, mock_convert, mock_llm, mock_settings, tmp_path
@@ -406,11 +437,12 @@ class TestPdfIngestionAgent:
         rub = _write_rubric(tmp_path)
         mock_settings.pdf_regex_fast_path_enabled = False
         mock_convert.return_value = (
-            "Student ID: IT21000099\nStudent Name: Jane Doe\nContent here."
+            "Student ID: IT21000099\nStudent Name: Jane Doe\nAssignment No: 4\nContent here."
         )
         det = MagicMock()
-        det.student_id = "IT21000099"
+        det.student_number = "IT21000099"
         det.student_name = "Jane Doe"
+        det.assignment_number = "4"
         det.submission_text = "Content here."
         mock_llm.return_value.invoke.return_value = det
 
@@ -419,3 +451,4 @@ class TestPdfIngestionAgent:
         mock_llm.return_value.invoke.assert_called_once()
         assert result["student_id"] == "IT21000099"
         assert result["student_name"] == "Jane Doe"
+        assert result["assignment_number"] == "4"

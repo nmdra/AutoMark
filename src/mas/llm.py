@@ -13,13 +13,19 @@ Two model tiers are used to balance quality and speed:
     Finalize Agent report task)
 
 * **Light model** (``settings.light_model_name``, default
-  ``gemma3:1b-it-q4_K_M``) – used for lightweight queries where a smaller
-  model is sufficient:
+  ``gemma3:1b-it-q4_K_M``) – used for lightweight prose generation:
 
-  - :func:`get_light_json_llm` – student-detail extraction from PDF text
-    (PDF Ingestion Agent)
   - :func:`get_light_prose_llm` – short progression-insight paragraph
     (Historical Agent / Finalize Agent insights task)
+
+* **Metadata extractor model**
+  (``settings.metadata_extractor_model_name``, default
+  ``hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M``) –
+  used for strict JSON extraction of student metadata from noisy assignment
+  text:
+
+  - :func:`get_metadata_json_llm` – student number/name/assignment number
+    extraction for text and PDF ingestion agents
 
 All instances are cached at module level so that the same ``ChatOllama``
 object (and its underlying HTTP session) is reused across agent calls within
@@ -52,6 +58,9 @@ _plain_json_llm_instance: ChatOllama | None = None
 _light_prose_llm_instance: ChatOllama | None = None
 _light_json_llm_instances: dict[type, Any] = {}
 _plain_light_json_llm_instance: ChatOllama | None = None
+
+_metadata_json_llm_instances: dict[type, Any] = {}
+_plain_metadata_json_llm_instance: ChatOllama | None = None
 
 
 # ── Analysis-model factory functions ──────────────────────────────────────────
@@ -181,3 +190,35 @@ def get_light_prose_llm() -> ChatOllama:
             keep_alive=_KEEP_ALIVE,
         )
     return _light_prose_llm_instance
+
+
+def get_metadata_json_llm(schema: type[Any] | None = None) -> ChatOllama:
+    """Return metadata-extractor JSON client (or structured wrapper when schema is provided).
+
+    Use this for robust extraction of student metadata fields from noisy
+    assignment text/PDF snippets.
+    """
+    global _plain_metadata_json_llm_instance  # noqa: PLW0603
+
+    kwargs: dict[str, Any] = {
+        "model": settings.metadata_extractor_model_name,
+        "base_url": settings.ollama_base_url,
+        "temperature": 0.0,
+        "format": "json",
+        "num_ctx": settings.num_ctx,
+        "num_predict": settings.num_predict,
+        "keep_alive": _KEEP_ALIVE,
+    }
+
+    if schema is not None:
+        if schema not in _metadata_json_llm_instances:
+            if _plain_metadata_json_llm_instance is None:
+                _plain_metadata_json_llm_instance = ChatOllama(**kwargs)
+            _metadata_json_llm_instances[schema] = (
+                _plain_metadata_json_llm_instance.with_structured_output(schema)
+            )
+        return _metadata_json_llm_instances[schema]
+
+    if _plain_metadata_json_llm_instance is None:
+        _plain_metadata_json_llm_instance = ChatOllama(**kwargs)
+    return _plain_metadata_json_llm_instance

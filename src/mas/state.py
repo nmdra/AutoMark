@@ -15,6 +15,7 @@ class AgentState(TypedDict, total=False):
     # ── Ingestion ──────────────────────────────────────────────────────────
     student_id: str
     student_name: str            # extracted from PDF (may be empty for .txt)
+    assignment_number: str       # extracted assignment identifier (may be empty)
     ingestion_status: str        # "success" | "failed"
     submission_text: str
     rubric_data: dict[str, Any]

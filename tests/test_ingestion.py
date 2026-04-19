@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mas.agents.ingestion import _extract_student_id, _extract_student_name, ingestion_agent
+from mas.agents.ingestion import (
+    _extract_assignment_number,
+    _extract_student_id,
+    _extract_student_name,
+    ingestion_agent,
+)
 from mas.state import AgentState
 
 
@@ -32,7 +37,12 @@ SAMPLE_RUBRIC = {
     ],
 }
 
-SAMPLE_SUBMISSION = "Student Name: Jane Smith\nStudent ID: IT21000001\n\nMy answer here."
+SAMPLE_SUBMISSION = (
+    "Student Name: Jane Smith\n"
+    "Student ID: IT21000001\n"
+    "Assignment No: 03\n\n"
+    "My answer here."
+)
 
 
 # ── _extract_student_id unit tests ────────────────────────────────────────────
@@ -73,6 +83,17 @@ class TestExtractStudentName:
         assert _extract_student_name("No name here") == ""
 
 
+class TestExtractAssignmentNumber:
+    def test_extracts_standard_format(self):
+        assert _extract_assignment_number("Assignment No: 03") == "03"
+
+    def test_extracts_homework_format(self):
+        assert _extract_assignment_number("HW-7") == "7"
+
+    def test_returns_empty_when_not_found(self):
+        assert _extract_assignment_number("No assignment number here") == ""
+
+
 # ── ingestion_agent tests ─────────────────────────────────────────────────────
 
 class TestIngestionAgent:
@@ -87,6 +108,7 @@ class TestIngestionAgent:
         assert result["ingestion_status"] == "success"
         assert result["student_id"] == "IT21000001"
         assert result["student_name"] == "Jane Smith"
+        assert result["assignment_number"] == "03"
         assert result["submission_text"] == SAMPLE_SUBMISSION
         assert result["rubric_data"]["total_marks"] == 10
 
@@ -163,18 +185,20 @@ class TestIngestionAgent:
         rub = tmp_path / "rubric.json"
         sub.write_text("No ID in this text.", encoding="utf-8")
         rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
-        with patch("mas.agents.ingestion.get_light_json_llm") as mock_llm:
+        with patch("mas.agents.ingestion.get_metadata_json_llm") as mock_llm:
             mock_details = MagicMock()
-            mock_details.student_id = ""
+            mock_details.student_number = ""
             mock_details.student_name = ""
+            mock_details.assignment_number = ""
             mock_llm.return_value.invoke.return_value = mock_details
             result = ingestion_agent(_make_state(str(sub), str(rub)))
 
         assert result["ingestion_status"] == "success"
         assert result["student_id"] == ""
         assert result["student_name"] == ""
+        assert result["assignment_number"] == ""
 
-    @patch("mas.agents.ingestion.get_light_json_llm")
+    @patch("mas.agents.ingestion.get_metadata_json_llm")
     @patch("mas.agents.ingestion.settings")
     def test_llm_extraction_used_when_fast_path_disabled(
         self, mock_settings, mock_llm, tmp_path
@@ -184,11 +208,12 @@ class TestIngestionAgent:
         sub.write_text(SAMPLE_SUBMISSION, encoding="utf-8")
         rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
         mock_settings.pdf_regex_fast_path_enabled = False
-        mock_settings.light_model_name = "test-light-model"
+        mock_settings.metadata_extractor_model_name = "test-extractor-model"
 
         mock_details = MagicMock()
-        mock_details.student_id = "IT21000001"
+        mock_details.student_number = "IT21000001"
         mock_details.student_name = "Jane Smith"
+        mock_details.assignment_number = "03"
         mock_llm.return_value.invoke.return_value = mock_details
 
         result = ingestion_agent(_make_state(str(sub), str(rub)))
@@ -196,9 +221,10 @@ class TestIngestionAgent:
         assert result["ingestion_status"] == "success"
         assert result["student_id"] == "IT21000001"
         assert result["student_name"] == "Jane Smith"
+        assert result["assignment_number"] == "03"
         assert mock_llm.called
 
-    @patch("mas.agents.ingestion.get_light_json_llm")
+    @patch("mas.agents.ingestion.get_metadata_json_llm")
     def test_llm_fallback_used_when_regex_missing_fields(self, mock_llm, tmp_path):
         sub = tmp_path / "submission.txt"
         rub = tmp_path / "rubric.json"
@@ -206,8 +232,9 @@ class TestIngestionAgent:
         rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
 
         mock_details = MagicMock()
-        mock_details.student_id = "IT21009999"
+        mock_details.student_number = "IT21009999"
         mock_details.student_name = "Alex Lee"
+        mock_details.assignment_number = "2"
         mock_llm.return_value.invoke.return_value = mock_details
 
         result = ingestion_agent(_make_state(str(sub), str(rub)))
@@ -215,13 +242,17 @@ class TestIngestionAgent:
         assert result["ingestion_status"] == "success"
         assert result["student_id"] == "IT21009999"
         assert result["student_name"] == "Alex Lee"
+        assert result["assignment_number"] == "2"
         assert mock_llm.called
 
-    @patch("mas.agents.ingestion.get_light_json_llm")
+    @patch("mas.agents.ingestion.get_metadata_json_llm")
     def test_llm_failure_falls_back_to_regex(self, mock_llm, tmp_path):
         sub = tmp_path / "submission.txt"
         rub = tmp_path / "rubric.json"
-        sub.write_text("Student ID: IT21000077\nContent body.", encoding="utf-8")
+        sub.write_text(
+            "Student ID: IT21000077\nAssignment No: 01\nContent body.",
+            encoding="utf-8",
+        )
         rub.write_text(json.dumps(SAMPLE_RUBRIC), encoding="utf-8")
         mock_llm.return_value.invoke.side_effect = RuntimeError("llm unavailable")
 
@@ -230,6 +261,7 @@ class TestIngestionAgent:
         assert result["ingestion_status"] == "success"
         assert result["student_id"] == "IT21000077"
         assert result["student_name"] == ""
+        assert result["assignment_number"] == "01"
         assert "error" in result
         assert "llm unavailable" in result["error"]
 
@@ -279,7 +311,7 @@ class TestIngestionAgent:
         result = ingestion_agent(_make_state(str(sub), str(rub)))
 
         expected = {
-            "session_id", "ingestion_status", "student_id", "student_name",
+            "session_id", "ingestion_status", "student_id", "student_name", "assignment_number",
             "submission_text", "rubric_data", "agent_logs",
         }
         assert set(result.keys()) == expected

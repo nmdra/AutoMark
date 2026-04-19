@@ -11,9 +11,13 @@ AutoMark uses two separate Ollama models to balance quality and speed:
   deep reading comprehension and long-form generation (rubric scoring,
   feedback-report prose).  Defaults to ``phi4-mini:3.8b-q4_K_M``.
 
-* **Light model** – used for lightweight queries where a smaller model is
-  sufficient: extracting student details from PDF text and generating short
-  progression-insight paragraphs.  Defaults to ``gemma3:1b-it-q4_K_M``.
+* **Light model** – used for lightweight prose queries where a smaller model is
+  sufficient: generating short progression-insight paragraphs.  Defaults to
+  ``gemma3:1b-it-q4_K_M``.
+
+* **Metadata extractor model** – dedicated to student metadata extraction from
+  noisy assignment text/PDF content.  Defaults to
+  ``hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M``.
 
 Environment variables
 ---------------------
@@ -25,9 +29,15 @@ AUTOMARK_ANALYSIS_MODEL_NAME
     ``AUTOMARK_ANALYSIS_MODEL_NAME`` is unset).
 
 AUTOMARK_LIGHT_MODEL_NAME
-    Ollama model identifier for lightweight queries (PDF extraction,
-    progression-insight summaries).
+    Ollama model identifier for lightweight prose queries (progression-insight
+    summaries).
     Default: ``gemma3:1b-it-q4_K_M``
+
+AUTOMARK_METADATA_EXTRACTOR_MODEL_NAME
+    Ollama model identifier for student assignment metadata extraction from
+    noisy text/PDF snippets.
+    Default:
+    ``hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M``
 
 AUTOMARK_OLLAMA_BASE_URL
     Base URL for the Ollama HTTP API.
@@ -144,8 +154,10 @@ class Settings:
     # ── LLM / Ollama ──────────────────────────────────────────────────────────
     # Heavy model for analysis-focused tasks (rubric scoring, feedback reports)
     analysis_model_name: str
-    # Lightweight model for simple extraction and short prose tasks
+    # Lightweight model for short prose tasks
     light_model_name: str
+    # Dedicated model for assignment metadata extraction
+    metadata_extractor_model_name: str
     ollama_base_url: str
 
     # ── Storage ───────────────────────────────────────────────────────────────
@@ -183,6 +195,10 @@ def _load_settings() -> Settings:
         ),
         light_model_name=_env(
             "AUTOMARK_LIGHT_MODEL_NAME", "gemma3:1b-it-q4_K_M"
+        ),
+        metadata_extractor_model_name=_env(
+            "AUTOMARK_METADATA_EXTRACTOR_MODEL_NAME",
+            "hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M",
         ),
         ollama_base_url=_env("AUTOMARK_OLLAMA_BASE_URL", "http://localhost:11434"),
         db_path=_env("AUTOMARK_DB_PATH", str(root / "data" / "students.db")),
