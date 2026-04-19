@@ -31,6 +31,9 @@ All instances are cached at module level so that the same ``ChatOllama``
 object (and its underlying HTTP session) is reused across agent calls within
 a process, avoiding repeated object-construction overhead.
 
+For schema-constrained JSON extraction/scoring, this module uses Outlines when
+available, with automatic fallback to LangChain's structured output wrappers.
+
 For parallel LLM requests (e.g. the finalize agent running the light-model
 insights call and the analysis-model report call concurrently), configure
 ``OLLAMA_NUM_PARALLEL >= 2`` on the Ollama server.
@@ -38,6 +41,9 @@ insights call and the analysis-model report call concurrently), configure
 
 from __future__ import annotations
 
+import io
+import json
+from contextlib import redirect_stdout
 from typing import TYPE_CHECKING, Any
 
 from langchain_ollama import ChatOllama
@@ -61,6 +67,83 @@ _plain_light_json_llm_instance: ChatOllama | None = None
 
 _metadata_json_llm_instances: dict[type, Any] = {}
 _plain_metadata_json_llm_instance: ChatOllama | None = None
+
+_outlines_json_llm_instances: dict[tuple[str, type], Any] = {}
+
+
+class _OutlinesStructuredJSONLLM:
+    """Outlines-backed structured JSON wrapper exposing LangChain-like ``invoke``."""
+
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        base_url: str,
+        schema: type[Any],
+        temperature: float,
+        num_ctx: int,
+        num_predict: int,
+        keep_alive: str,
+    ) -> None:
+        import outlines
+        from ollama import Client as OllamaClient
+        from outlines.generator import Generator
+
+        self._schema = schema
+        self._generator = Generator(
+            outlines.from_ollama(
+                OllamaClient(host=base_url),
+                model_name=model_name,
+            ),
+            output_type=schema,
+        )
+        self._options: dict[str, Any] = {
+            "temperature": temperature,
+            "num_ctx": num_ctx,
+            "num_predict": num_predict,
+        }
+        self._keep_alive = keep_alive
+
+    @staticmethod
+    def _to_chat_messages(messages: list[Any]) -> list[dict[str, str]]:
+        """Convert LangChain-style messages into role/content chat dictionaries."""
+        role_map = {
+            "human": "user",
+            "ai": "assistant",
+            "system": "system",
+            "tool": "tool",
+            "function": "tool",
+        }
+        formatted: list[dict[str, str]] = []
+        for message in messages:
+            msg_type = str(getattr(message, "type", "human")).lower()
+            role = role_map.get(msg_type, "user")
+            content = getattr(message, "content", message)
+            if isinstance(content, list):
+                content = "\n".join(str(item) for item in content)
+            formatted.append({"role": role, "content": str(content)})
+        return formatted
+
+    def invoke(self, messages: list[Any]) -> Any:
+        chat_messages = self._to_chat_messages(messages)
+        # outlines.models.ollama currently prints formatted input to stdout,
+        # so silence it to keep agent logs/prompt content out of console output.
+        with redirect_stdout(io.StringIO()):
+            raw = self._generator(
+                chat_messages,
+                options=self._options,
+                keep_alive=self._keep_alive,
+            )
+
+        if isinstance(raw, self._schema):
+            return raw
+        if isinstance(raw, dict):
+            return self._schema.model_validate(raw)
+        if isinstance(raw, str):
+            return self._schema.model_validate(json.loads(raw))
+        raise TypeError(
+            f"Unsupported structured output type from Outlines: {type(raw)!r}"
+        )
 
 
 # ── Analysis-model factory functions ──────────────────────────────────────────
@@ -94,9 +177,26 @@ def get_json_llm(schema: type[Any] | None = None) -> ChatOllama:
 
     if schema is not None:
         if schema not in _json_llm_instances:
-            if _plain_json_llm_instance is None:
-                _plain_json_llm_instance = ChatOllama(**kwargs)
-            _json_llm_instances[schema] = _plain_json_llm_instance.with_structured_output(schema)
+            cache_key = ("analysis", schema)
+            if cache_key in _outlines_json_llm_instances:
+                _json_llm_instances[schema] = _outlines_json_llm_instances[cache_key]
+            else:
+                try:
+                    llm = _OutlinesStructuredJSONLLM(
+                        model_name=settings.analysis_model_name,
+                        base_url=settings.ollama_base_url,
+                        schema=schema,
+                        temperature=0.0,
+                        num_ctx=settings.num_ctx,
+                        num_predict=settings.num_predict,
+                        keep_alive=_KEEP_ALIVE,
+                    )
+                except (ImportError, ModuleNotFoundError, AttributeError, TypeError):
+                    if _plain_json_llm_instance is None:
+                        _plain_json_llm_instance = ChatOllama(**kwargs)
+                    llm = _plain_json_llm_instance.with_structured_output(schema)
+                _outlines_json_llm_instances[cache_key] = llm
+                _json_llm_instances[schema] = llm
         return _json_llm_instances[schema]
 
     if _plain_json_llm_instance is None:
@@ -157,11 +257,28 @@ def get_light_json_llm(schema: type[Any] | None = None) -> ChatOllama:
 
     if schema is not None:
         if schema not in _light_json_llm_instances:
-            if _plain_light_json_llm_instance is None:
-                _plain_light_json_llm_instance = ChatOllama(**kwargs)
-            _light_json_llm_instances[schema] = (
-                _plain_light_json_llm_instance.with_structured_output(schema)
-            )
+            cache_key = ("light", schema)
+            if cache_key in _outlines_json_llm_instances:
+                _light_json_llm_instances[schema] = _outlines_json_llm_instances[
+                    cache_key
+                ]
+            else:
+                try:
+                    llm = _OutlinesStructuredJSONLLM(
+                        model_name=settings.light_model_name,
+                        base_url=settings.ollama_base_url,
+                        schema=schema,
+                        temperature=0.0,
+                        num_ctx=settings.num_ctx,
+                        num_predict=settings.num_predict,
+                        keep_alive=_KEEP_ALIVE,
+                    )
+                except (ImportError, ModuleNotFoundError, AttributeError, TypeError):
+                    if _plain_light_json_llm_instance is None:
+                        _plain_light_json_llm_instance = ChatOllama(**kwargs)
+                    llm = _plain_light_json_llm_instance.with_structured_output(schema)
+                _outlines_json_llm_instances[cache_key] = llm
+                _light_json_llm_instances[schema] = llm
         return _light_json_llm_instances[schema]
 
     if _plain_light_json_llm_instance is None:
@@ -212,11 +329,30 @@ def get_metadata_json_llm(schema: type[Any] | None = None) -> ChatOllama:
 
     if schema is not None:
         if schema not in _metadata_json_llm_instances:
-            if _plain_metadata_json_llm_instance is None:
-                _plain_metadata_json_llm_instance = ChatOllama(**kwargs)
-            _metadata_json_llm_instances[schema] = (
-                _plain_metadata_json_llm_instance.with_structured_output(schema)
-            )
+            cache_key = ("metadata", schema)
+            if cache_key in _outlines_json_llm_instances:
+                _metadata_json_llm_instances[schema] = _outlines_json_llm_instances[
+                    cache_key
+                ]
+            else:
+                try:
+                    llm = _OutlinesStructuredJSONLLM(
+                        model_name=settings.metadata_extractor_model_name,
+                        base_url=settings.ollama_base_url,
+                        schema=schema,
+                        temperature=0.0,
+                        num_ctx=settings.num_ctx,
+                        num_predict=settings.num_predict,
+                        keep_alive=_KEEP_ALIVE,
+                    )
+                except (ImportError, ModuleNotFoundError, AttributeError, TypeError):
+                    if _plain_metadata_json_llm_instance is None:
+                        _plain_metadata_json_llm_instance = ChatOllama(**kwargs)
+                    llm = _plain_metadata_json_llm_instance.with_structured_output(
+                        schema
+                    )
+                _outlines_json_llm_instances[cache_key] = llm
+                _metadata_json_llm_instances[schema] = llm
         return _metadata_json_llm_instances[schema]
 
     if _plain_metadata_json_llm_instance is None:
