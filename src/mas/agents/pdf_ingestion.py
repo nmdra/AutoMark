@@ -2,120 +2,24 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
 
+from mas.agents.metadata_extraction import (
+    METADATA_SYSTEM_PROMPT,
+    StudentDetails,
+    _build_extraction_prompt,
+    _build_metadata_context,
+)
 from mas.config import settings
 from mas.llm import get_metadata_json_llm
 from mas.state import AgentState
 from mas.tools.file_ops import read_json_file
 from mas.tools.logger import log_agent_action, timed_model_call
 from mas.tools.pdf_processor import convert_pdf_to_markdown
-
-
-class StudentDetails(BaseModel):
-    """Structured extractor output for PDF submissions.
-
-    Field names mirror the SmolLM2 extractor schema. ``student_number`` is
-    mapped to the internal ``student_id`` state key.
-    """
-
-    student_number: str = Field(
-        description="The student's unique number/ID. Empty string if not found."
-    )
-    student_name: str = Field(
-        description="The student's full name. Empty string if not found."
-    )
-    assignment_number: str = Field(
-        description="The assignment number/identifier. Empty string if not found."
-    )
-
-
-_METADATA_CONTEXT_MAX_CHARS = 2500
-_IDENTITY_LINE_RE = re.compile(
-    r"\b(student\s*)?(id|name|registration|reg\s*no|index|roll\s*no|assignment|hw|homework)\b",
-    re.IGNORECASE,
-)
-_STUDENT_ID_RE = re.compile(
-    r"\b(?:student\s*(?:id|number)|registration|reg\s*no|index|roll\s*no)\s*[:#-]?\s*([A-Za-z]{0,4}\d{5,12})\b",
-    re.IGNORECASE,
-)
-_STUDENT_NAME_RE = re.compile(
-    r"\bstudent\s*name\s*[:#-]?\s*([^\n\r,;:]{2,80})",
-    re.IGNORECASE,
-)
-_ASSIGNMENT_NUMBER_RE = re.compile(
-    r"\b(?:assignment(?:\s*(?:no|number))?|hw|homework)\s*[:#-]?\s*([A-Za-z0-9_-]{1,16})\b",
-    re.IGNORECASE,
-)
-
-
-def _build_metadata_context(markdown_text: str) -> str:
-    """Build a compact context for identity-field extraction."""
-    normalized = markdown_text.strip()
-    if not normalized:
-        return ""
-
-    top_chunk = normalized[:_METADATA_CONTEXT_MAX_CHARS]
-    identity_lines: list[str] = []
-    seen: set[str] = set()
-    for line in normalized.splitlines():
-        clean_line = line.strip()
-        if not clean_line:
-            continue
-        if not _IDENTITY_LINE_RE.search(clean_line):
-            continue
-        if clean_line in seen:
-            continue
-        seen.add(clean_line)
-        identity_lines.append(clean_line)
-        if len(identity_lines) >= 20:
-            break
-
-    if not identity_lines:
-        return top_chunk
-
-    return (
-        f"{top_chunk}\n\n"
-        "## Candidate Identity Lines\n"
-        f"{chr(10).join(identity_lines)}"
-    )
-
-
-def _build_extraction_prompt(metadata_context: str) -> str:
-    return (
-        "### Instruction:\n"
-        "Extract student info as JSON from the following text.\n\n"
-        "### Input:\n"
-        f"{metadata_context}\n\n"
-        "### Response:\n"
-    )
-
-
-def _extract_metadata_regex(markdown_text: str) -> tuple[str, str, str]:
-    """Extract metadata deterministically from markdown using lightweight regexes."""
-    student_id = ""
-    student_name = ""
-    assignment_number = ""
-
-    student_id_match = _STUDENT_ID_RE.search(markdown_text)
-    if student_id_match:
-        student_id = (student_id_match.group(1) or "").strip()
-
-    student_name_match = _STUDENT_NAME_RE.search(markdown_text)
-    if student_name_match:
-        student_name = (student_name_match.group(1) or "").strip()
-
-    assignment_match = _ASSIGNMENT_NUMBER_RE.search(markdown_text)
-    if assignment_match:
-        assignment_number = (assignment_match.group(1) or "").strip()
-
-    return student_id, student_name, assignment_number
 
 
 def pdf_ingestion_agent(state: AgentState) -> dict:
@@ -177,22 +81,11 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
 
     # --- Stage 2: Extract metadata via LLM ---
     if stage1_ok:
-        (
-            regex_student_id,
-            regex_student_name,
-            regex_assignment_number,
-        ) = _extract_metadata_regex(markdown_text)
         try:
             llm = get_metadata_json_llm(schema=StudentDetails)
             metadata_context = _build_metadata_context(markdown_text)
             messages = [
-                SystemMessage(
-                    content=(
-                        "You are a precise student assignment data extractor.\n"
-                        "Output ONLY a valid JSON object. No explanation. No extra text. No markdown.\n"
-                        'Always output exactly: {"student_number":"...","student_name":"...","assignment_number":"..."}'
-                    )
-                ),
+                SystemMessage(content=METADATA_SYSTEM_PROMPT),
                 HumanMessage(content=_build_extraction_prompt(metadata_context)),
             ]
             result: StudentDetails = timed_model_call(
@@ -203,16 +96,11 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
                 task_type="student_details_extraction",
                 model=settings.metadata_extractor_model_name,
             )
-            student_id = (result.student_number or "").strip() or regex_student_id
-            student_name = (result.student_name or "").strip() or regex_student_name
-            assignment_number = (
-                (result.assignment_number or "").strip() or regex_assignment_number
-            )
+            student_id = (result.student_number or "").strip()
+            student_name = (result.student_name or "").strip()
+            assignment_number = (result.assignment_number or "").strip()
         except Exception as exc:  # noqa: BLE001
             error = str(exc)
-            student_id = regex_student_id
-            student_name = regex_student_name
-            assignment_number = regex_assignment_number
 
         if rubric_data:
             ingestion_status = "success"

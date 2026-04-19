@@ -321,8 +321,8 @@ class TestPdfIngestionAgent:
 
     @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
-    def test_llm_failure_falls_back_to_regex_metadata(self, mock_convert, mock_llm, tmp_path):
-        """When LLM extraction fails, deterministic regex metadata is preserved."""
+    def test_llm_failure_returns_empty_metadata(self, mock_convert, mock_llm, tmp_path):
+        """When LLM extraction fails, metadata fields remain empty."""
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
         mock_convert.return_value = (
@@ -334,9 +334,9 @@ class TestPdfIngestionAgent:
 
         assert result["submission_text"].startswith("Student ID: IT21012345")
         assert result["ingestion_status"] == "success"
-        assert result["student_id"] == "IT21012345"
-        assert result["student_name"] == "Jane Doe"
-        assert result["assignment_number"] == "4"
+        assert result["student_id"] == ""
+        assert result["student_name"] == ""
+        assert result["assignment_number"] == ""
         assert "error" in result
 
     @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
