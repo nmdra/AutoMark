@@ -70,7 +70,11 @@ def _build_metadata_context(raw_text: str) -> str:
     if not identity_lines:
         return top_chunk
 
-    return f"{top_chunk}\n\n## Candidate Identity Lines\n{'\n'.join(identity_lines)}"
+    return (
+        f"{top_chunk}\n\n"
+        "## Candidate Identity Lines\n"
+        "\n".join(identity_lines)
+    )
 
 
 def _build_extraction_prompt(metadata_context: str) -> str:
