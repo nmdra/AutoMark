@@ -17,25 +17,6 @@ from mas.tools.file_ops import read_json_file
 from mas.tools.logger import log_agent_action, timed_model_call
 from mas.tools.pdf_processor import convert_pdf_to_markdown
 
-# ── Regex patterns reused from the text ingestion path ────────────────────────
-
-# Matches "Student ID: <value>" or "ID: <value>" (case-insensitive)
-_STUDENT_ID_RE = re.compile(r"(?:student\s+)?id\s*:\s*(\S+)", re.IGNORECASE)
-
-# Matches "Student Name: <value>" or "Name: <value>" (case-insensitive)
-# Captures to end-of-line (strips trailing whitespace)
-_STUDENT_NAME_RE = re.compile(
-    r"(?:student\s+)?name\s*:\s*(.+?)(?:\s*$)",
-    re.IGNORECASE | re.MULTILINE,
-)
-_ASSIGNMENT_NUMBER_RE = re.compile(
-    r"(?:"
-    r"(?:assignment|assg?n?\.?|homework)\s*(?:no\.?|number|#)?\s*[:=.\-]\s*"
-    r"|hw\s*[-:#]?\s*"
-    r")([A-Za-z0-9-]+)",
-    re.IGNORECASE,
-)
-
 
 class StudentDetails(BaseModel):
     """Structured extractor output for PDF submissions.
@@ -53,35 +34,6 @@ class StudentDetails(BaseModel):
     assignment_number: str = Field(
         description="The assignment number/identifier. Empty string if not found."
     )
-
-
-def _regex_extract_student_id(text: str) -> str:
-    """Extract student ID using a regex pattern.
-
-    Returns an empty string when no match is found.
-    """
-    match = _STUDENT_ID_RE.search(text)
-    return match.group(1).strip() if match else ""
-
-
-def _regex_extract_student_name(text: str) -> str:
-    """Extract student name using a regex pattern.
-
-    Returns an empty string when no match is found.
-    """
-    match = _STUDENT_NAME_RE.search(text)
-    if not match:
-        return ""
-    name = match.group(1).strip()
-    name = re.sub(r"^\*+\s*", "", name)
-    name = re.sub(r"\s*\*+$", "", name)
-    return name.strip()
-
-
-def _regex_extract_assignment_number(text: str) -> str:
-    """Extract assignment number using a regex pattern."""
-    match = _ASSIGNMENT_NUMBER_RE.search(text)
-    return match.group(1).strip() if match else ""
 
 
 _METADATA_CONTEXT_MAX_CHARS = 2500
@@ -190,60 +142,34 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
 
-    # --- Stage 2: Optional regex fast-path; otherwise extract via LLM ---
+    # --- Stage 2: Extract metadata via LLM ---
     if stage1_ok:
-        regex_id = ""
-        regex_name = ""
-        regex_assignment_number = ""
-        student_id = ""
-        student_name = ""
-        assignment_number = ""
-        if settings.pdf_regex_fast_path_enabled:
-            # Fast path: try regex extraction first – no LLM call needed when all
-            # metadata fields are found deterministically.
-            regex_id = _regex_extract_student_id(markdown_text)
-            regex_name = _regex_extract_student_name(markdown_text)
-            regex_assignment_number = _regex_extract_assignment_number(markdown_text)
-            if regex_id and regex_name and regex_assignment_number:
-                student_id = regex_id
-                student_name = regex_name
-                assignment_number = regex_assignment_number
-
-        if not (student_id and student_name and assignment_number):
-            # Either regex is disabled, regex did not fully match, or fast-path
-            # extraction was intentionally bypassed; use the LLM extractor.
-            try:
-                llm = get_metadata_json_llm(schema=StudentDetails)
-                metadata_context = _build_metadata_context(markdown_text)
-                messages = [
-                    SystemMessage(
-                        content=(
-                            "You are a precise student assignment data extractor.\n"
-                            "Output ONLY a valid JSON object. No explanation. No extra text. No markdown.\n"
-                            'Always output exactly: {"student_number":"...","student_name":"...","assignment_number":"..."}'
-                        )
-                    ),
-                    HumanMessage(content=_build_extraction_prompt(metadata_context)),
-                ]
-                result: StudentDetails = timed_model_call(
-                    llm=llm,
-                    messages=messages,
-                    session_id=session_id,
-                    service="pdf_ingestion",
-                    task_type="student_details_extraction",
-                    model=settings.metadata_extractor_model_name,
-                )
-                student_id = (result.student_number or regex_id).strip()
-                student_name = (result.student_name or regex_name).strip()
-                assignment_number = (
-                    result.assignment_number or regex_assignment_number
-                ).strip()
-            except Exception as exc:  # noqa: BLE001
-                # Fall back to regex results (when available) + raw markdown.
-                student_id = regex_id
-                student_name = regex_name
-                assignment_number = regex_assignment_number
-                error = str(exc)
+        try:
+            llm = get_metadata_json_llm(schema=StudentDetails)
+            metadata_context = _build_metadata_context(markdown_text)
+            messages = [
+                SystemMessage(
+                    content=(
+                        "You are a precise student assignment data extractor.\n"
+                        "Output ONLY a valid JSON object. No explanation. No extra text. No markdown.\n"
+                        'Always output exactly: {"student_number":"...","student_name":"...","assignment_number":"..."}'
+                    )
+                ),
+                HumanMessage(content=_build_extraction_prompt(metadata_context)),
+            ]
+            result: StudentDetails = timed_model_call(
+                llm=llm,
+                messages=messages,
+                session_id=session_id,
+                service="pdf_ingestion",
+                task_type="student_details_extraction",
+                model=settings.metadata_extractor_model_name,
+            )
+            student_id = (result.student_number or "").strip()
+            student_name = (result.student_name or "").strip()
+            assignment_number = (result.assignment_number or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
 
         if rubric_data:
             ingestion_status = "success"

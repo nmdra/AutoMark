@@ -6,14 +6,9 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from mas.agents.pdf_ingestion import (
     _build_metadata_context,
     _build_extraction_prompt,
-    _regex_extract_student_id,
-    _regex_extract_student_name,
-    _regex_extract_assignment_number,
     pdf_ingestion_agent,
 )
 from mas.state import AgentState
@@ -93,48 +88,6 @@ class TestBuildMetadataContext:
         assert len(context) < len(text)
 
 
-# ── Regex extraction helpers ──────────────────────────────────────────────────
-
-
-class TestRegexExtractors:
-    def test_student_id_standard(self):
-        assert _regex_extract_student_id("Student ID: IT21000001") == "IT21000001"
-
-    def test_student_id_short_form(self):
-        assert _regex_extract_student_id("ID: ABC123") == "ABC123"
-
-    def test_student_id_case_insensitive(self):
-        assert _regex_extract_student_id("student id: xyz99") == "xyz99"
-
-    def test_student_id_not_found(self):
-        assert _regex_extract_student_id("No identifier here") == ""
-
-    def test_student_name_standard(self):
-        assert _regex_extract_student_name("Student Name: Alice Smith") == "Alice Smith"
-
-    def test_student_name_short_form(self):
-        assert _regex_extract_student_name("Name: Bob Jones") == "Bob Jones"
-
-    def test_student_name_case_insensitive(self):
-        assert _regex_extract_student_name("name: Charlie Brown") == "Charlie Brown"
-
-    def test_student_name_not_found(self):
-        assert _regex_extract_student_name("No name line here") == ""
-
-    def test_student_name_multiline(self):
-        text = "Student ID: IT21000001\nStudent Name: Alice Smith\nContent"
-        assert _regex_extract_student_name(text) == "Alice Smith"
-
-    def test_student_name_strips_leading_markdown_asterisks(self):
-        assert _regex_extract_student_name("Student Name: ** Jane Smith") == "Jane Smith"
-
-    def test_assignment_number_standard(self):
-        assert _regex_extract_assignment_number("Assignment No: 03") == "03"
-
-    def test_assignment_number_short_form(self):
-        assert _regex_extract_assignment_number("HW-7") == "7"
-
-
 # ── pdf_ingestion_agent ───────────────────────────────────────────────────────
 
 
@@ -199,13 +152,11 @@ class TestPdfIngestionAgent:
 
     @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
-    @patch("mas.agents.pdf_ingestion.settings")
     def test_llm_prompt_uses_compact_metadata_context(
-        self, mock_settings, mock_convert, mock_llm, tmp_path
+        self, mock_convert, mock_llm, tmp_path
     ):
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
-        mock_settings.pdf_regex_fast_path_enabled = False
         mock_convert.return_value = (
             "Student ID: IT21000042\n"
             + ("X" * 3000)
@@ -385,57 +336,12 @@ class TestPdfIngestionAgent:
 
     @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
     @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
-    def test_regex_fast_path_skips_llm_when_both_fields_found(
+    def test_llm_called_for_metadata_extraction(
         self, mock_convert, mock_llm, tmp_path
     ):
-        """When regex finds all metadata fields, the LLM must NOT be called."""
+        """The metadata extractor LLM is always invoked for PDF submissions."""
         pdf = _fake_pdf(tmp_path)
         rub = _write_rubric(tmp_path)
-        mock_convert.return_value = (
-            "Student ID: IT21000099\nStudent Name: Jane Doe\nAssignment No: 02\nContent here."
-        )
-
-        result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
-
-        mock_llm.assert_not_called()
-        assert result["student_id"] == "IT21000099"
-        assert result["student_name"] == "Jane Doe"
-        assert result["assignment_number"] == "02"
-        assert result["ingestion_status"] == "success"
-
-    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
-    @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
-    def test_llm_called_when_name_missing_from_markdown(
-        self, mock_convert, mock_llm, tmp_path
-    ):
-        """When student_name cannot be found by regex, the LLM must be invoked."""
-        pdf = _fake_pdf(tmp_path)
-        rub = _write_rubric(tmp_path)
-        # Only student_id is present; no name line.
-        mock_convert.return_value = "Student ID: IT21000042\nContent."
-        det = MagicMock()
-        det.student_number = "IT21000042"
-        det.student_name = "Bob Smith"
-        det.assignment_number = "3"
-        det.submission_text = "Content."
-        mock_llm.return_value.invoke.return_value = det
-
-        result = pdf_ingestion_agent(_make_state(str(pdf), str(rub)))
-
-        mock_llm.return_value.invoke.assert_called_once()
-        assert result["student_name"] == "Bob Smith"
-        assert result["assignment_number"] == "3"
-
-    @patch("mas.agents.pdf_ingestion.settings")
-    @patch("mas.agents.pdf_ingestion.get_metadata_json_llm")
-    @patch("mas.agents.pdf_ingestion.convert_pdf_to_markdown")
-    def test_regex_fast_path_can_be_disabled_via_env_setting(
-        self, mock_convert, mock_llm, mock_settings, tmp_path
-    ):
-        """When regex fast-path is disabled, LLM runs even if regex could extract both."""
-        pdf = _fake_pdf(tmp_path)
-        rub = _write_rubric(tmp_path)
-        mock_settings.pdf_regex_fast_path_enabled = False
         mock_convert.return_value = (
             "Student ID: IT21000099\nStudent Name: Jane Doe\nAssignment No: 4\nContent here."
         )

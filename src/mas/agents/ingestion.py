@@ -14,19 +14,6 @@ from mas.state import AgentState
 from mas.tools.file_ops import read_json_file, read_text_file, validate_submission_files
 from mas.tools.logger import log_agent_action, timed_model_call
 
-# Matches "Student ID: <value>" or "Student ID : <value>" (case-insensitive)
-_STUDENT_ID_RE = re.compile(r"student\s+id\s*:\s*(\S+)", re.IGNORECASE)
-
-# Matches "Student Name: <value>" or "Student Name - <value>" (case-insensitive)
-_STUDENT_NAME_RE = re.compile(r"student\s+name\s*[:=-]\s*([^\n\r]+)", re.IGNORECASE)
-# Matches "Assignment No: <value>", "HW-03", etc. (case-insensitive)
-_ASSIGNMENT_NUMBER_RE = re.compile(
-    r"(?:"
-    r"(?:assignment|assg?n?\.?|homework)\s*(?:no\.?|number|#)?\s*[:=.\-]\s*"
-    r"|hw\s*[-:#]?\s*"
-    r")([A-Za-z0-9-]+)",
-    re.IGNORECASE,
-)
 _METADATA_CONTEXT_MAX_CHARS = 2500
 _IDENTITY_LINE_RE = re.compile(
     r"\b(student\s*)?(id|name|registration|reg\s*no|index|roll\s*no|assignment|hw|homework)\b",
@@ -50,36 +37,6 @@ class StudentDetails(BaseModel):
     assignment_number: str = Field(
         description="The assignment number/identifier. Empty string if not found."
     )
-
-
-def _extract_student_id(text: str) -> str:
-    """Extract the student ID from the submission text.
-
-    Looks for a line matching ``Student ID: <value>``.  Returns an empty
-    string when no match is found.
-    """
-    match = _STUDENT_ID_RE.search(text)
-    return match.group(1) if match else ""
-
-
-def _extract_student_name(text: str) -> str:
-    """Extract the student name from the submission text.
-
-    Looks for a line matching ``Student Name: <value>`` (or ``-``/``=`` separators).
-    Returns an empty string when no match is found.
-    """
-    return _extract_with_pattern(text, _STUDENT_NAME_RE)
-
-
-def _extract_assignment_number(text: str) -> str:
-    """Extract the assignment number from submission text."""
-    return _extract_with_pattern(text, _ASSIGNMENT_NUMBER_RE)
-
-
-def _extract_with_pattern(text: str, pattern: re.Pattern[str]) -> str:
-    """Extract and normalize regex group-1 content, returning empty when missing."""
-    match = pattern.search(text)
-    return match.group(1).strip() if match else ""
 
 
 def _build_metadata_context(submission_text: str) -> str:
@@ -131,7 +88,8 @@ def ingestion_agent(state: AgentState) -> dict:
     * Validate that submission and rubric file paths are non-empty, the files
       exist, are non-empty, and have the correct extensions.
     * Read the submission text and parse the rubric JSON.
-    * Extract ``student_id`` and ``student_name`` from the submission text.
+    * Extract ``student_id``, ``student_name``, and ``assignment_number`` using
+      the metadata extractor model.
 
     Sets ``ingestion_status`` to ``"success"`` or ``"failed"``.  On failure
     the graph routes directly to the Report Agent for graceful degradation.
@@ -158,50 +116,32 @@ def ingestion_agent(state: AgentState) -> dict:
         validate_submission_files(submission_path, rubric_path)
         submission_text = read_text_file(submission_path)
         rubric_data = read_json_file(rubric_path)
-        regex_id = _extract_student_id(submission_text)
-        regex_name = _extract_student_name(submission_text)
-        regex_assignment_number = _extract_assignment_number(submission_text)
-        student_id = regex_id
-        student_name = regex_name
-        assignment_number = regex_assignment_number
-        use_llm_extraction = (
-            not settings.pdf_regex_fast_path_enabled
-            or not regex_id
-            or not regex_name
-            or not regex_assignment_number
-        )
-        if use_llm_extraction:
-            try:
-                llm = get_metadata_json_llm(schema=StudentDetails)
-                metadata_context = _build_metadata_context(submission_text)
-                messages = [
-                    SystemMessage(
-                        content=(
-                            "You are a precise student assignment data extractor.\n"
-                            "Output ONLY a valid JSON object. No explanation. No extra text. No markdown.\n"
-                            'Always output exactly: {"student_number":"...","student_name":"...","assignment_number":"..."}'
-                        )
-                    ),
-                    HumanMessage(content=_build_extraction_prompt(metadata_context)),
-                ]
-                result: StudentDetails = timed_model_call(
-                    llm=llm,
-                    messages=messages,
-                    session_id=session_id,
-                    service="ingestion",
-                    task_type="student_details_extraction",
-                    model=settings.metadata_extractor_model_name,
-                )
-                student_id = (result.student_number or regex_id).strip()
-                student_name = (result.student_name or regex_name).strip()
-                assignment_number = (
-                    result.assignment_number or regex_assignment_number
-                ).strip()
-            except Exception as exc:  # noqa: BLE001
-                student_id = regex_id
-                student_name = regex_name
-                assignment_number = regex_assignment_number
-                error = f"LLM extraction failed: {exc}"
+        try:
+            llm = get_metadata_json_llm(schema=StudentDetails)
+            metadata_context = _build_metadata_context(submission_text)
+            messages = [
+                SystemMessage(
+                    content=(
+                        "You are a precise student assignment data extractor.\n"
+                        "Output ONLY a valid JSON object. No explanation. No extra text. No markdown.\n"
+                        'Always output exactly: {"student_number":"...","student_name":"...","assignment_number":"..."}'
+                    )
+                ),
+                HumanMessage(content=_build_extraction_prompt(metadata_context)),
+            ]
+            result: StudentDetails = timed_model_call(
+                llm=llm,
+                messages=messages,
+                session_id=session_id,
+                service="ingestion",
+                task_type="student_details_extraction",
+                model=settings.metadata_extractor_model_name,
+            )
+            student_id = (result.student_number or "").strip()
+            student_name = (result.student_name or "").strip()
+            assignment_number = (result.assignment_number or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            error = f"LLM extraction failed: {exc}"
         ingestion_status = "success"
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
