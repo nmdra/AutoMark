@@ -243,7 +243,6 @@ AutoMark uses two local Ollama model roles by default:
 | `AUTOMARK_LLM_REPORT_ENABLED` | `true` | Set to `false` to skip prose LLM report generation and use deterministic template fallback |
 | `AUTOMARK_SUBMISSION_MAX_CHARS` | `8000` | Max submission characters sent to analysis model |
 | `AUTOMARK_MIN_REPORTS_FOR_INSIGHTS` | `1` | Minimum number of past reports required before generating progression insights |
-| `AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED` | `true` | Set to `false` to force model-based student-detail extraction instead of regex fast path |
 | `AUTOMARK_JOB_WORKER_CONCURRENCY` | `2` | Worker threads for async batch jobs |
 | `AUTOMARK_JOB_QUEUE_MAX_SIZE` | `100` | Max queued batch jobs in memory |
 | `AUTOMARK_JOB_MAX_RETRIES` | `1` | Default retries per batch item |
