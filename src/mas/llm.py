@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from time import perf_counter, time
 from typing import TYPE_CHECKING, Any
 from urllib.error import URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from langchain_ollama import ChatOllama
@@ -254,7 +255,13 @@ class OllamaRawResponse:
 
 def _ollama_generate(payload: dict[str, Any]) -> dict[str, Any]:
     """Call Ollama /api/generate with JSON payload."""
-    url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
+    base_url = settings.ollama_base_url.rstrip("/")
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise RuntimeError(
+            "Invalid AUTOMARK_OLLAMA_BASE_URL; expected http(s) URL with host"
+        )
+    url = f"{base_url}/api/generate"
     req = Request(
         url=url,
         data=json.dumps(payload).encode("utf-8"),
@@ -262,7 +269,7 @@ def _ollama_generate(payload: dict[str, Any]) -> dict[str, Any]:
         method="POST",
     )
     try:
-        with urlopen(req, timeout=90) as resp:  # noqa: S310
+        with urlopen(req, timeout=90) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Ollama prefix-cache request failed: {exc}") from exc
@@ -361,7 +368,6 @@ class OllamaPrefixCachedJsonClient:
             response_metadata=response_metadata,
             model_call_metadata={
                 "cache_hit": cache_hit,
-                "cache_status": "hit" if cache_hit else "miss",
                 "warmup_ms": round(float(warmup_ms), 2),
                 "analysis_latency_ms": round(float(analysis_latency_ms), 2),
             },

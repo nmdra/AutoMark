@@ -203,7 +203,7 @@ def log_model_call(
         entry["details"]["metadata"] = metadata
         for key, value in metadata.items():
             if isinstance(value, bool | int | float | str):
-                entry[key] = value
+                entry[f"meta_{key}"] = value
     if error:
         entry["error"] = error
         entry["details"]["error"] = error
@@ -227,7 +227,6 @@ def timed_model_call(
     try:
         response = llm.invoke(messages)
     except Exception as exc:
-        response_metadata = getattr(response, "model_call_metadata", None)
         log_model_call(
             session_id=session_id,
             service=service,
@@ -237,7 +236,7 @@ def timed_model_call(
             status="error",
             response=response,
             error=str(exc),
-            metadata=response_metadata if isinstance(response_metadata, dict) else None,
+            metadata=None,
         )
         raise
 

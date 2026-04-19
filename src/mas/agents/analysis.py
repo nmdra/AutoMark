@@ -83,11 +83,22 @@ def _build_prefix_context(rubric_data: dict[str, Any]) -> str:
     )
 
 
-def _build_submission_prompt(submission_text: str) -> str:
+def _build_submission_context(submission_text: str) -> str:
     # Truncate to avoid bloating the context window with very long submissions.
     max_chars = settings.submission_max_chars
     if len(submission_text) > max_chars:
-        submission_text = submission_text[:max_chars] + "\n\n[...truncated...]"
+        truncated = submission_text[:max_chars]
+        next_char = submission_text[max_chars : max_chars + 1]
+        split_mid_word = (
+            bool(next_char)
+            and not next_char.isspace()
+            and not truncated.endswith((" ", "\n", "\t"))
+        )
+        if split_mid_word:
+            split_parts = truncated.rsplit(maxsplit=1)
+            if len(split_parts) == 2:
+                truncated = split_parts[0]
+        submission_text = truncated.rstrip() + "\n\n[...truncated...]"
     return (
         f"## Student Submission\n\n{submission_text}\n\n"
         "Score each criterion and provide a one-sentence justification."
@@ -124,12 +135,13 @@ def analysis_agent(state: AgentState) -> dict:
 
     system_prompt = _build_system_prompt()
     prefix_context = _build_prefix_context(rubric_data)
-    submission_prompt = _build_submission_prompt(submission_text)
+    submission_prompt = _build_submission_context(submission_text)
     compact_rubric_payload = {
         "total_marks": int(rubric_data.get("total_marks") or 0),
         "criteria": _compact_criteria(rubric_data),
     }
     rubric_hash = hash_rubric_payload(compact_rubric_payload)
+    full_prompt = prefix_context + "\n\n" + submission_prompt
 
     try:
         if settings.prompt_cache_enabled:
@@ -140,12 +152,12 @@ def analysis_agent(state: AgentState) -> dict:
                 prefix_context=prefix_context,
                 submission_prompt=submission_prompt,
             )
-            messages: list[Any] = []
+            messages = [HumanMessage(content=submission_prompt)]
         else:
             llm = get_json_llm(schema=RubricScores)
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=prefix_context + "\n\n" + submission_prompt),
+                HumanMessage(content=full_prompt),
             ]
 
         result = timed_model_call(
@@ -164,7 +176,7 @@ def analysis_agent(state: AgentState) -> dict:
                 fallback_llm = get_json_llm(schema=RubricScores)
                 fallback_messages = [
                     SystemMessage(content=system_prompt),
-                    HumanMessage(content=prefix_context + "\n\n" + submission_prompt),
+                    HumanMessage(content=full_prompt),
                 ]
                 fallback_result = timed_model_call(
                     llm=fallback_llm,
