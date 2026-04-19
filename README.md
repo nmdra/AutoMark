@@ -55,8 +55,8 @@ flowchart LR
 | Step | Agent | Responsibility |
 |---|---|---|
 | 1 | **_detect** | Routes to the correct ingestion agent based on file extension |
-| 2a | **Ingestion** | Validates and reads `.txt` submissions; extracts `student_id` from text |
-| 2b | **PDF Ingestion** | Converts `.pdf` to Markdown via `pymupdf4llm`; uses the LLM to extract `student_id` and `student_name` |
+| 2a | **Ingestion** | Validates and reads `.txt` submissions; extracts `student_id`, `student_name`, and `assignment_number` metadata |
+| 2b | **PDF Ingestion** | Converts `.pdf` to Markdown via `pymupdf4llm`; uses the metadata extractor model to extract `student_id`, `student_name`, and `assignment_number` |
 | 3 | **Analysis** | Scores each rubric criterion with the LLM; totals computed deterministically |
 | 4 | **Historical** | Persists results to SQLite; retrieves past reports; generates progression insights |
 | 5 | **Report** | Generates a Markdown feedback report and a marking sheet via LLM |
@@ -68,10 +68,10 @@ If ingestion fails (e.g. missing files), the pipeline short-circuits directly to
 ## Agents
 
 ### Ingestion Agent (`agents/ingestion.py`)
-Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions. Reads the plain-text submission and parses the rubric JSON. Extracts `student_id` from the submission text using a regex pattern (`Student ID: <value>`). Sets `ingestion_status` to `"success"` or `"failed"`.
+Validates that both input file paths are non-empty, the files exist, are non-empty, and have the correct extensions. Reads the plain-text submission and parses the rubric JSON. Uses the dedicated metadata extractor model to extract `student_id`, `student_name`, and `assignment_number` from the submission text. Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### PDF Ingestion Agent (`agents/pdf_ingestion.py`)
-Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, and always passes that full Markdown to downstream scoring/reporting. The light model (default: `gemma3:1b-it-q4_K_M`) is used for extracting student metadata (`student_id`, `student_name`) from a compact metadata-focused prompt. Sets `ingestion_status` to `"success"` or `"failed"`.
+Validates the `.pdf` submission path, converts the PDF to Markdown using `pymupdf4llm`, and always passes that full Markdown to downstream scoring/reporting. A dedicated metadata extractor model (default: `hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M`) is used for extracting student metadata (`student_id`, `student_name`, `assignment_number`) from a compact metadata-focused prompt. Sets `ingestion_status` to `"success"` or `"failed"`.
 
 ### Analysis Agent (`agents/analysis.py`)
 Calls the analysis model (default: `phi4-mini:3.8b-q4_K_M`) via LangChain/Ollama to score each rubric criterion. LLM output is structured using a Pydantic schema (`RubricScores`). Scores are clamped to `[0, max_score]` and the total is computed deterministically by `calculate_total_score` — the LLM is never trusted for arithmetic.
@@ -222,13 +222,15 @@ Settings are loaded from environment variables (or a `.env` file in the project 
 
 AutoMark uses two local Ollama model roles by default:
 - **Analysis model** for scoring and report prose (`AUTOMARK_ANALYSIS_MODEL_NAME`)
-- **Light model** for PDF metadata extraction and historical insights (`AUTOMARK_LIGHT_MODEL_NAME`)
+- **Light model** for historical insights (`AUTOMARK_LIGHT_MODEL_NAME`)
+- **Metadata extractor model** for noisy assignment metadata extraction (`AUTOMARK_METADATA_EXTRACTOR_MODEL_NAME`)
 
 | Variable | Default | Description |
 |---|---|---|
 | `AUTOMARK_ANALYSIS_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Ollama model identifier for rubric scoring and report generation |
 | `AUTOMARK_MODEL_NAME` | `phi4-mini:3.8b-q4_K_M` | Legacy alias for `AUTOMARK_ANALYSIS_MODEL_NAME` (deprecated; used as fallback when analysis model is unset, ignored when it is set) |
-| `AUTOMARK_LIGHT_MODEL_NAME` | `gemma3:1b-it-q4_K_M` | Ollama model for lightweight extraction/insight tasks |
+| `AUTOMARK_LIGHT_MODEL_NAME` | `gemma3:1b-it-q4_K_M` | Ollama model for lightweight insight-generation tasks |
+| `AUTOMARK_METADATA_EXTRACTOR_MODEL_NAME` | `hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M` | Ollama model for strict student metadata extraction (`student_number`, `student_name`, `assignment_number`) |
 | `AUTOMARK_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama HTTP API base URL |
 | `AUTOMARK_DB_PATH` | `data/students.db` | SQLite database path |
 | `AUTOMARK_LOG_FILE` | `agent_trace.log` | JSON agent trace log path |
@@ -400,8 +402,8 @@ These tests are **automatically skipped** when Ollama is not running or the mode
 ### Submission
 
 Supported formats:
-- **Plain text** (`.txt`) — UTF-8 encoded. Optionally include `Student ID: <value>` on any line for automatic ID extraction.
-- **PDF** (`.pdf`) — The PDF is converted to Markdown automatically. The LLM attempts to extract `student_id` and `student_name` from the cover page.
+- **Plain text** (`.txt`) — UTF-8 encoded. Metadata extraction targets noisy `student_number`/`student_name`/`assignment_number` lines.
+- **PDF** (`.pdf`) — The PDF is converted to Markdown automatically. The metadata extractor attempts to extract `student_id`, `student_name`, and `assignment_number` from the cover page/content.
 
 ### Rubric (`data/rubric.json`)
 

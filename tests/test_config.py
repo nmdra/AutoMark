@@ -29,6 +29,13 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.light_model_name == "gemma3:1b-it-q4_K_M"
 
+    def test_default_metadata_extractor_model_name(self):
+        s = _reload_settings({})
+        assert (
+            s.metadata_extractor_model_name
+            == "hf.co/nimendraai/SmolLM2-360M-Assignment-Metadata-Extractor:Q4_K_M"
+        )
+
     def test_default_ollama_base_url(self):
         s = _reload_settings({})
         assert s.ollama_base_url == "http://localhost:11434"
@@ -122,6 +129,12 @@ class TestSettingsEnvOverrides:
     def test_light_model_name_override(self):
         s = _reload_settings({"AUTOMARK_LIGHT_MODEL_NAME": "gemma3:4b-it-q4_K_M"})
         assert s.light_model_name == "gemma3:4b-it-q4_K_M"
+
+    def test_metadata_extractor_model_name_override(self):
+        s = _reload_settings(
+            {"AUTOMARK_METADATA_EXTRACTOR_MODEL_NAME": "hf.co/custom/extractor:Q4_K_M"}
+        )
+        assert s.metadata_extractor_model_name == "hf.co/custom/extractor:Q4_K_M"
 
     def test_legacy_model_name_env_sets_analysis_model(self):
         """AUTOMARK_MODEL_NAME (legacy) should set analysis_model_name when
@@ -256,6 +269,7 @@ class TestModuleSingleton:
         for field in (
             "analysis_model_name",
             "light_model_name",
+            "metadata_extractor_model_name",
             "ollama_base_url",
             "db_path",
             "log_file",
