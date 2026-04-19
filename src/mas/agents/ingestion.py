@@ -11,7 +11,6 @@ from mas.agents.metadata_extraction import (
     StudentDetails,
     _build_extraction_prompt,
     _build_metadata_context,
-    _extract_metadata_regex,
 )
 from mas.config import settings
 from mas.llm import get_metadata_json_llm
@@ -54,11 +53,6 @@ def ingestion_agent(state: AgentState) -> dict:
         validate_submission_files(submission_path, rubric_path)
         submission_text = read_text_file(submission_path)
         rubric_data = read_json_file(rubric_path)
-        (
-            regex_student_id,
-            regex_student_name,
-            regex_assignment_number,
-        ) = _extract_metadata_regex(submission_text)
         try:
             llm = get_metadata_json_llm(schema=StudentDetails)
             metadata_context = _build_metadata_context(submission_text)
@@ -74,16 +68,11 @@ def ingestion_agent(state: AgentState) -> dict:
                 task_type="student_details_extraction",
                 model=settings.metadata_extractor_model_name,
             )
-            student_id = (result.student_number or "").strip() or regex_student_id
-            student_name = (result.student_name or "").strip() or regex_student_name
-            assignment_number = (
-                (result.assignment_number or "").strip() or regex_assignment_number
-            )
+            student_id = (result.student_number or "").strip()
+            student_name = (result.student_name or "").strip()
+            assignment_number = (result.assignment_number or "").strip()
         except Exception as exc:  # noqa: BLE001
             error = f"LLM extraction failed: {exc}"
-            student_id = regex_student_id
-            student_name = regex_student_name
-            assignment_number = regex_assignment_number
         ingestion_status = "success"
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)

@@ -13,7 +13,6 @@ from mas.agents.metadata_extraction import (
     StudentDetails,
     _build_extraction_prompt,
     _build_metadata_context,
-    _extract_metadata_regex,
 )
 from mas.config import settings
 from mas.llm import get_metadata_json_llm
@@ -82,11 +81,6 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
 
     # --- Stage 2: Extract metadata via LLM ---
     if stage1_ok:
-        (
-            regex_student_id,
-            regex_student_name,
-            regex_assignment_number,
-        ) = _extract_metadata_regex(markdown_text)
         try:
             llm = get_metadata_json_llm(schema=StudentDetails)
             metadata_context = _build_metadata_context(markdown_text)
@@ -102,16 +96,11 @@ def pdf_ingestion_agent(state: AgentState) -> dict:
                 task_type="student_details_extraction",
                 model=settings.metadata_extractor_model_name,
             )
-            student_id = (result.student_number or "").strip() or regex_student_id
-            student_name = (result.student_name or "").strip() or regex_student_name
-            assignment_number = (
-                (result.assignment_number or "").strip() or regex_assignment_number
-            )
+            student_id = (result.student_number or "").strip()
+            student_name = (result.student_name or "").strip()
+            assignment_number = (result.assignment_number or "").strip()
         except Exception as exc:  # noqa: BLE001
             error = str(exc)
-            student_id = regex_student_id
-            student_name = regex_student_name
-            assignment_number = regex_assignment_number
 
         if rubric_data:
             ingestion_status = "success"
