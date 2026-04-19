@@ -80,10 +80,6 @@ class TestSettingsDefaults:
         s = _reload_settings({})
         assert s.min_reports_for_insights == 1
 
-    def test_default_pdf_regex_fast_path_enabled(self):
-        s = _reload_settings({})
-        assert s.pdf_regex_fast_path_enabled is True
-
     def test_default_job_worker_concurrency(self):
         s = _reload_settings({})
         assert s.job_worker_concurrency == 2
@@ -199,10 +195,6 @@ class TestSettingsEnvOverrides:
         s = _reload_settings({"AUTOMARK_MIN_REPORTS_FOR_INSIGHTS": "2"})
         assert s.min_reports_for_insights == 2
 
-    def test_pdf_regex_fast_path_enabled_false(self):
-        s = _reload_settings({"AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED": "false"})
-        assert s.pdf_regex_fast_path_enabled is False
-
     def test_job_worker_concurrency_override(self):
         s = _reload_settings({"AUTOMARK_JOB_WORKER_CONCURRENCY": "4"})
         assert s.job_worker_concurrency == 4
@@ -281,7 +273,6 @@ class TestModuleSingleton:
             "llm_report_enabled",
             "submission_max_chars",
             "min_reports_for_insights",
-            "pdf_regex_fast_path_enabled",
             "job_worker_concurrency",
             "job_queue_max_size",
             "job_max_retries",

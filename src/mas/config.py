@@ -89,12 +89,6 @@ AUTOMARK_MIN_REPORTS_FOR_INSIGHTS
     before generating trend commentary.
     Default: ``1``
 
-AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED
-    Set to ``false`` (case-insensitive) to skip regex fast-path extraction for
-    student details in both PDF and text submissions and always use the
-    model-based extractor.
-    Default: ``true``
-
 AUTOMARK_JOB_WORKER_CONCURRENCY
     Number of in-process worker threads that process queued batch jobs.
     Default: ``2``
@@ -175,7 +169,6 @@ class Settings:
     llm_report_enabled: bool
     submission_max_chars: int
     min_reports_for_insights: int
-    pdf_regex_fast_path_enabled: bool
     job_worker_concurrency: int
     job_queue_max_size: int
     job_max_retries: int
@@ -223,9 +216,6 @@ def _load_settings() -> Settings:
         min_reports_for_insights=int(
             _env("AUTOMARK_MIN_REPORTS_FOR_INSIGHTS", "1")
         ),
-        pdf_regex_fast_path_enabled=_env(
-            "AUTOMARK_PDF_REGEX_FAST_PATH_ENABLED", "true"
-        ).lower() not in ("false", "0", "no"),
         job_worker_concurrency=int(_env("AUTOMARK_JOB_WORKER_CONCURRENCY", "2")),
         job_queue_max_size=int(_env("AUTOMARK_JOB_QUEUE_MAX_SIZE", "100")),
         job_max_retries=int(_env("AUTOMARK_JOB_MAX_RETRIES", "1")),
