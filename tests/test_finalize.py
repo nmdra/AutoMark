@@ -208,10 +208,10 @@ class TestFinalizeAgent:
         assert isinstance(result["summary"], str)
 
     @patch("mas.agents.finalize.get_prose_llm")
-    def test_summary_skips_horizontal_rules(self, mock_get_prose_llm, tmp_path):
+    def test_summary_is_deterministic_and_plain_text(self, mock_get_prose_llm, tmp_path):
         mock_prose = MagicMock()
         mock_prose.invoke.return_value = MagicMock(
-            content="# Feedback Report\n\n---\n\nThis is the real summary."
+            content="# Feedback Report\n\n---\n\nThis is model prose that should not be used."
         )
         mock_get_prose_llm.return_value = mock_prose
 
@@ -221,8 +221,11 @@ class TestFinalizeAgent:
         )
         result = finalize_agent(state)
 
-        assert result["summary"] == "This is the real summary."
-        assert result["summary"] != "---"
+        assert result["summary"] == (
+            "Total score: 7/10 (70.00%), grade C. "
+            "Breakdown: Accuracy: 4/5; Clarity: 3/5."
+        )
+        assert "\n" not in result["summary"]
 
     def test_analysis_report_written(self, tmp_path):
         db = str(tmp_path / "students.db")
