@@ -67,8 +67,8 @@ _plain_metadata_json_llm_instance: ChatOllama | None = None
 
 # ── Analysis-model factory functions ──────────────────────────────────────────
 
-def get_json_llm(schema: type[Any] | None = None) -> ChatOllama:
-    """Return a ``ChatOllama`` instance using the *analysis model* for JSON output.
+def get_json_llm(schema: type[Any] | None = None) -> Any:
+    """Return analysis-model JSON client or structured-output wrapper.
 
     Use this for computationally demanding tasks that need deep reading
     comprehension – specifically the Analysis Agent's rubric-scoring call.
@@ -132,8 +132,8 @@ def get_prose_llm() -> ChatOllama:
 
 # ── Light-model factory functions ──────────────────────────────────────────────
 
-def get_light_json_llm(schema: type[Any] | None = None) -> ChatOllama:
-    """Return a ``ChatOllama`` instance using the *light model* for JSON output.
+def get_light_json_llm(schema: type[Any] | None = None) -> Any:
+    """Return light-model JSON client or structured-output wrapper.
 
     Use this for lightweight structured-extraction tasks where a small model
     is sufficient – specifically the PDF Ingestion Agent's student-detail
@@ -196,7 +196,7 @@ def get_light_prose_llm() -> ChatOllama:
     return _light_prose_llm_instance
 
 
-def get_metadata_json_llm(schema: type[Any] | None = None) -> ChatOllama:
+def get_metadata_json_llm(schema: type[Any] | None = None) -> Any:
     """Return metadata-extractor JSON client (or structured wrapper when schema is provided).
 
     Use this for robust extraction of student metadata fields from noisy

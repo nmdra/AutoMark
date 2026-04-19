@@ -204,7 +204,7 @@ class TestIngestionAgent:
         assert mock_llm.called
 
     @patch("mas.agents.ingestion.get_metadata_json_llm")
-    def test_llm_failure_returns_empty_metadata(self, mock_llm, tmp_path):
+    def test_llm_failure_uses_regex_fallback_metadata(self, mock_llm, tmp_path):
         sub = tmp_path / "submission.txt"
         rub = tmp_path / "rubric.json"
         sub.write_text("Student ID: IT21000077\nAssignment No: 01\nContent body.", encoding="utf-8")
@@ -214,9 +214,9 @@ class TestIngestionAgent:
         result = ingestion_agent(_make_state(str(sub), str(rub)))
 
         assert result["ingestion_status"] == "success"
-        assert result["student_id"] == ""
+        assert result["student_id"] == "IT21000077"
         assert result["student_name"] == ""
-        assert result["assignment_number"] == ""
+        assert result["assignment_number"] == "01"
         assert "error" in result
         assert "llm unavailable" in result["error"]
 

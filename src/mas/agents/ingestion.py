@@ -19,6 +19,18 @@ _IDENTITY_LINE_RE = re.compile(
     r"\b(student\s*)?(id|name|registration|reg\s*no|index|roll\s*no|assignment|hw|homework)\b",
     re.IGNORECASE,
 )
+_STUDENT_ID_RE = re.compile(
+    r"\b(?:student\s*(?:id|number)|registration|reg\s*no|index|roll\s*no)\s*[:#-]?\s*([A-Za-z]{0,4}\d{5,12})\b",
+    re.IGNORECASE,
+)
+_STUDENT_NAME_RE = re.compile(
+    r"\bstudent\s*name\s*[:#-]?\s*([^\n\r,;:]{2,80})",
+    re.IGNORECASE,
+)
+_ASSIGNMENT_NUMBER_RE = re.compile(
+    r"\b(?:assignment(?:\s*(?:no|number))?|hw|homework)\s*[:#-]?\s*([A-Za-z0-9_-]{1,16})\b",
+    re.IGNORECASE,
+)
 
 
 class StudentDetails(BaseModel):
@@ -81,6 +93,27 @@ def _build_extraction_prompt(metadata_context: str) -> str:
     )
 
 
+def _extract_metadata_regex(submission_text: str) -> tuple[str, str, str]:
+    """Extract metadata deterministically from text using lightweight regexes."""
+    student_id = ""
+    student_name = ""
+    assignment_number = ""
+
+    student_id_match = _STUDENT_ID_RE.search(submission_text)
+    if student_id_match:
+        student_id = (student_id_match.group(1) or "").strip()
+
+    student_name_match = _STUDENT_NAME_RE.search(submission_text)
+    if student_name_match:
+        student_name = (student_name_match.group(1) or "").strip()
+
+    assignment_match = _ASSIGNMENT_NUMBER_RE.search(submission_text)
+    if assignment_match:
+        assignment_number = (assignment_match.group(1) or "").strip()
+
+    return student_id, student_name, assignment_number
+
+
 def ingestion_agent(state: AgentState) -> dict:
     """Validate and load submission files then extract student metadata.
 
@@ -116,6 +149,11 @@ def ingestion_agent(state: AgentState) -> dict:
         validate_submission_files(submission_path, rubric_path)
         submission_text = read_text_file(submission_path)
         rubric_data = read_json_file(rubric_path)
+        (
+            regex_student_id,
+            regex_student_name,
+            regex_assignment_number,
+        ) = _extract_metadata_regex(submission_text)
         try:
             llm = get_metadata_json_llm(schema=StudentDetails)
             metadata_context = _build_metadata_context(submission_text)
@@ -137,11 +175,16 @@ def ingestion_agent(state: AgentState) -> dict:
                 task_type="student_details_extraction",
                 model=settings.metadata_extractor_model_name,
             )
-            student_id = (result.student_number or "").strip()
-            student_name = (result.student_name or "").strip()
-            assignment_number = (result.assignment_number or "").strip()
+            student_id = (result.student_number or "").strip() or regex_student_id
+            student_name = (result.student_name or "").strip() or regex_student_name
+            assignment_number = (
+                (result.assignment_number or "").strip() or regex_assignment_number
+            )
         except Exception as exc:  # noqa: BLE001
             error = f"LLM extraction failed: {exc}"
+            student_id = regex_student_id
+            student_name = regex_student_name
+            assignment_number = regex_assignment_number
         ingestion_status = "success"
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         error = str(exc)
