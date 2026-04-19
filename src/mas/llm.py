@@ -311,7 +311,6 @@ class OllamaPrefixCachedJsonClient:
             "system": self._system_prompt,
             "prompt": self._prefix_context,
             "stream": False,
-            "raw": True,
             "keep_alive": _KEEP_ALIVE,
             "options": {
                 "temperature": 0.0,
