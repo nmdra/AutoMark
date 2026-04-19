@@ -74,12 +74,41 @@ def test_outlines_wrapper_invoke_parses_json_string():
     wrapper._generator = MagicMock(return_value='{"value":"ok"}')
     wrapper._options = {}
     wrapper._keep_alive = "10m"
+    wrapper._chat_type = list
 
     response = wrapper.invoke([SimpleNamespace(type="human", content="hello")])
 
     assert isinstance(response, _DummySchema)
     assert response.value == "ok"
     wrapper._generator.assert_called_once()
+
+
+def test_outlines_wrapper_invoke_uses_outlines_chat_input():
+    wrapper = llm_module._OutlinesStructuredJSONLLM.__new__(
+        llm_module._OutlinesStructuredJSONLLM
+    )
+    wrapper._schema = _DummySchema
+    wrapper._options = {}
+    wrapper._keep_alive = "10m"
+
+    class FakeChat:
+        def __init__(self, messages):
+            self.messages = messages
+
+    captured: dict[str, object] = {}
+
+    def _fake_generator(chat_input, **kwargs):
+        captured["chat_input"] = chat_input
+        return {"value": "ok"}
+
+    wrapper._chat_type = FakeChat
+    wrapper._generator = _fake_generator
+
+    response = wrapper.invoke([SimpleNamespace(type="system", content="hello")])
+
+    assert isinstance(response, _DummySchema)
+    assert isinstance(captured["chat_input"], FakeChat)
+    assert captured["chat_input"].messages == [{"role": "system", "content": "hello"}]
 
 
 def test_outlines_wrapper_init_sets_generator_and_options(monkeypatch):
@@ -98,6 +127,8 @@ def test_outlines_wrapper_init_sets_generator_and_options(monkeypatch):
     fake_outlines.from_ollama = _from_ollama
 
     fake_outlines_generator = types.ModuleType("outlines.generator")
+    fake_outlines_inputs = types.ModuleType("outlines.inputs")
+    fake_outlines_inputs.Chat = list
 
     def _generator(model, output_type):
         captured["generator_model"] = model
@@ -111,6 +142,7 @@ def test_outlines_wrapper_init_sets_generator_and_options(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "outlines", fake_outlines)
     monkeypatch.setitem(sys.modules, "outlines.generator", fake_outlines_generator)
+    monkeypatch.setitem(sys.modules, "outlines.inputs", fake_outlines_inputs)
     monkeypatch.setitem(sys.modules, "ollama", fake_ollama)
 
     wrapper = llm_module._OutlinesStructuredJSONLLM(

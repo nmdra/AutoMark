@@ -86,9 +86,11 @@ class _OutlinesStructuredJSONLLM:
         keep_alive: str,
     ) -> None:
         import outlines
+        from outlines.inputs import Chat
         from ollama import Client as OllamaClient
         from outlines.generator import Generator
 
+        self._chat_type = Chat
         self._schema = schema
         self._generator = Generator(
             outlines.from_ollama(
@@ -126,11 +128,12 @@ class _OutlinesStructuredJSONLLM:
 
     def invoke(self, messages: list[Any]) -> Any:
         chat_messages = self._to_chat_messages(messages)
+        chat_input = self._chat_type(chat_messages)
         # outlines.models.ollama currently prints formatted input to stdout,
         # so silence it to keep agent logs/prompt content out of console output.
         with redirect_stdout(io.StringIO()):
             raw = self._generator(
-                chat_messages,
+                chat_input,
                 options=self._options,
                 keep_alive=self._keep_alive,
             )
