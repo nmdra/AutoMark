@@ -317,7 +317,7 @@ Then poll `GET /jobs/{job_id}` for status/progress and use
   "total_score": 17.0,
   "percentage": 85.0,
   "grade": "B",
-  "summary": "A well-structured submission...",
+  "summary": "Total score: 17/20 (85.00%), grade B. Breakdown: Definition: 4/5; Benefits: 5/5; Kubernetes: 4/5; Technical Depth: 4/5.",
   "criteria": [...],
   "feedback_report": "## Feedback\n...",
   "output_filepath": "output/20240101_120000_..._feedback_report.md",

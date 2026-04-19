@@ -126,17 +126,20 @@ class TestReportAgent:
         assert result["agent_logs"][0]["action"] == "write_feedback_report"
 
     @patch("mas.agents.report.get_prose_llm")
-    def test_summary_skips_horizontal_rules(self, mock_get_llm, tmp_path):
+    def test_summary_is_deterministic_and_plain_text(self, mock_get_llm, tmp_path):
         output = str(tmp_path / "report.md")
         mock_llm = MagicMock()
-        report_with_hr = "# Feedback Report\n\n---\n\nThis is the real summary."
+        report_with_hr = "# Feedback Report\n\n---\n\nThis is model prose that should not be used."
         mock_llm.invoke.return_value = MagicMock(content=report_with_hr)
         mock_get_llm.return_value = mock_llm
 
         result = report_agent(_make_state(output_path=output))
 
-        assert result["summary"] == "This is the real summary."
-        assert result["summary"] != "---"
+        assert result["summary"] == (
+            "Total score: 7/10 (70.00%), grade C. "
+            "Breakdown: Accuracy: 4/5; Clarity: 3/5."
+        )
+        assert "\n" not in result["summary"]
 
     @patch("mas.agents.report.get_prose_llm")
     def test_returns_only_changed_fields(self, mock_get_llm, tmp_path):

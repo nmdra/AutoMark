@@ -33,6 +33,7 @@ from mas.tools.file_writer import (
     write_marking_sheet,
 )
 from mas.tools.logger import log_agent_action, timed_model_call
+from mas.tools.summary_builder import build_deterministic_summary
 
 # Import prompt builders and helpers from the original agent modules so that
 # those modules remain independently testable.
@@ -256,23 +257,12 @@ def finalize_agent(state: AgentState) -> dict:
     except Exception:  # noqa: BLE001
         resolved_analysis = ""
 
-    # ── Summary extraction ────────────────────────────────────────────────────
-    summary = ""
-    paragraphs = [p.strip() for p in report_text.split("\n\n") if p.strip()]
-    for paragraph in paragraphs:
-        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
-        if not lines:
-            continue
-        if lines[0].startswith("#"):
-            continue
-        if all(line.startswith("**") and ":**" in line for line in lines):
-            continue
-        if all(set(line) <= {"-", "*", "_"} and len(line) >= 3 for line in lines):
-            continue
-        summary = paragraph
-        break
-    if not summary and paragraphs:
-        summary = paragraphs[0]
+    summary = build_deterministic_summary(
+        scored_criteria=scored_criteria,
+        total_score=total_score,
+        total_marks=total_marks,
+        grade=grade,
+    )
 
     # ── Observability ──────────────────────────────────────────────────────────
     outputs = {

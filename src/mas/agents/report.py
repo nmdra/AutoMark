@@ -12,6 +12,7 @@ from mas.llm import get_prose_llm
 from mas.state import AgentState
 from mas.tools.file_writer import write_feedback_report, write_marking_sheet
 from mas.tools.logger import log_agent_action, timed_model_call
+from mas.tools.summary_builder import build_deterministic_summary
 
 _DEFAULT_OUTPUT = "output/feedback_report.md"
 
@@ -192,26 +193,12 @@ def report_agent(state: AgentState) -> dict:
     existing_logs: list = list(state.get("agent_logs") or [])
     existing_logs.append(log_entry)
 
-    # Extract summary: first real prose paragraph of the report
-    paragraphs = [p.strip() for p in report_text.split("\n\n") if p.strip()]
-    summary = ""
-    for paragraph in paragraphs:
-        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
-        if not lines:
-            continue
-        # Skip headings
-        if lines[0].startswith("#"):
-            continue
-        # Skip bold key-value metadata lines
-        if all(line.startswith("**") and ":**" in line for line in lines):
-            continue
-        # Skip markdown horizontal rules (e.g. ---, ***, ___)
-        if all(set(line) <= {"-", "*", "_"} and len(line) >= 3 for line in lines):
-            continue
-        summary = paragraph
-        break
-    if not summary and paragraphs:
-        summary = paragraphs[0]
+    summary = build_deterministic_summary(
+        scored_criteria=state.get("scored_criteria", []),
+        total_score=state.get("total_score", 0),
+        total_marks=total_marks,
+        grade=state.get("grade", "N/A"),
+    )
 
     return {
         "final_report": report_text,
